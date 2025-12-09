@@ -15,7 +15,6 @@ final class PlayerCell: UITableViewCell {
         let label = UILabel()
         label.textColor = .white
         label.font = Fonts.pixel27
-        label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
     
@@ -24,7 +23,6 @@ final class PlayerCell: UITableViewCell {
         label.textColor = .systemYellow
         label.font = Fonts.pixel27
         label.textAlignment = .right
-        label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
     
@@ -32,33 +30,17 @@ final class PlayerCell: UITableViewCell {
         let view = UIView()
         view.backgroundColor = UIColor(white: 1.0, alpha: 0.08)
         view.layer.cornerRadius = 12
-        view.translatesAutoresizingMaskIntoConstraints = false
         return view
     }()
     
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
-        
         backgroundColor = .clear
         selectionStyle = .none
         
-        contentView.addSubview(containerView)
-        containerView.addSubview(nameLabel)
-        containerView.addSubview(statusLabel)
-        
-        NSLayoutConstraint.activate([
-            containerView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 4),
-            containerView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -4),
-            containerView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            containerView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            
-            nameLabel.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 16),
-            nameLabel.centerYAnchor.constraint(equalTo: containerView.centerYAnchor),
-            
-            statusLabel.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -12),
-            statusLabel.centerYAnchor.constraint(equalTo: containerView.centerYAnchor),
-            statusLabel.leadingAnchor.constraint(greaterThanOrEqualTo: nameLabel.trailingAnchor, constant: 8)
-        ])
+        configureContainerView()
+        configureNameLabel()
+        configureStatusLabel()
     }
     
     required init?(coder: NSCoder) {
@@ -75,5 +57,28 @@ final class PlayerCell: UITableViewCell {
             statusLabel.text = "not ready"
             statusLabel.textColor = .systemYellow
         }
+    }
+    
+    private func configureContainerView() {
+        contentView.addSubview(containerView)
+        containerView.pinTop(to: contentView.topAnchor, 4)
+        containerView.pinBottom(to: contentView.bottomAnchor, 4)
+        containerView.pinLeft(to: contentView.leadingAnchor)
+        containerView.pinRight(to: contentView.trailingAnchor)
+    }
+    
+    private func configureNameLabel() {
+        containerView.addSubview(nameLabel)
+        nameLabel.pinLeft(to: containerView.leadingAnchor, 16)
+        nameLabel.pinCenterY(to: containerView.centerYAnchor)
+    }
+    
+    private func configureStatusLabel() {
+        containerView.addSubview(statusLabel)
+        statusLabel.pinRight(to: containerView.trailingAnchor, 12)
+        statusLabel.pinCenterY(to: containerView.centerYAnchor)
+        NSLayoutConstraint.activate([
+            statusLabel.leadingAnchor.constraint(greaterThanOrEqualTo: nameLabel.trailingAnchor, constant: 8)
+        ])
     }
 }
