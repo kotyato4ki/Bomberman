@@ -16,6 +16,7 @@ final class GameWebSocketService: NSObject {
     private let decoder = JSONDecoder()
     private let encoder = JSONEncoder()
     
+    private(set) var currentPlayerId: String?
     private(set) var isConnected: Bool = false
     
     var onGameState: ((GameStateModel) -> Void)?
@@ -141,12 +142,20 @@ final class GameWebSocketService: NSObject {
 
         if let assignMessage = try? decoder.decode(AssignIdMessage.self, from: data),
            assignMessage.type == "assign_id" {
+            
             let playerId = assignMessage.payload
+            
             DispatchQueue.main.async { [weak self] in
-                self?.onAssignPlayerId?(playerId)
+                guard let self = self else { return }
+                
+                self.currentPlayerId = playerId
+                self.onAssignPlayerId?(playerId)
+                
+                print("Сохранен мой ID: \(playerId)")
             }
             return
         }
+
 
         if let jsonString = String(data: data, encoding: .utf8) {
             print("Unknown message from server: \(jsonString)")

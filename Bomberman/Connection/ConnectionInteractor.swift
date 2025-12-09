@@ -44,4 +44,8 @@ final class ConnectionInteractor: ConnectionInteractionLogic {
 
         print("Connection to the server...")
     }
+    
+    func updateLobbyFlag() {
+        didOpenLobby = false
+    }
 }
