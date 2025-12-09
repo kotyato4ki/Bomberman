@@ -8,11 +8,34 @@
 import UIKit
 
 final class ConnectionViewController: UIViewController {
+
+    private let interactor: ConnectionInteractionLogic
+    private let nameField = UITextField()
+    private let roleLabel = UILabel()
+    private let connectButton = UIButton()
+    private let gameNameLabel = UILabel()
+    private let stack = UIStackView()
     
-    private var didOpenLobby = false
+    init(interactor: ConnectionInteractionLogic) {
+        self.interactor = interactor
+        super.init(nibName: nil, bundle: nil)
+    }
     
-    private let nameField: UITextField = {
-        let field = UITextField()
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = Colors.background
+        configureNameTextField()
+        configureRoleLabel()
+        configureConnectButton()
+        configureGameNameLabel()
+        configureStack()
+    }
+    
+    private func configureNameTextField() {
         let placeholderText = "name"
         let placeholderColor = UIColor.lightGray
 
@@ -20,123 +43,73 @@ final class ConnectionViewController: UIViewController {
             string: placeholderText,
             attributes: [NSAttributedString.Key.foregroundColor: placeholderColor]
         )
-        field.attributedPlaceholder = attributedPlaceholder
-        let leftPaddingView = UIView(frame: CGRect(x: 0, y: 0, width: 15, height: field.frame.height))
-        field.leftView = leftPaddingView
-        field.leftViewMode = .always
+        nameField.attributedPlaceholder = attributedPlaceholder
+        let leftPaddingView = UIView(frame: CGRect(x: 0, y: 0, width: 15, height: nameField.frame.height))
+        nameField.leftView = leftPaddingView
+        nameField.leftViewMode = .always
 
-        let rightPaddingView = UIView(frame: CGRect(x: 0, y: 0, width: 15, height: field.frame.height))
-        field.rightView = rightPaddingView
-        field.rightViewMode = .always
+        let rightPaddingView = UIView(frame: CGRect(x: 0, y: 0, width: 15, height: nameField.frame.height))
+        nameField.rightView = rightPaddingView
+        nameField.rightViewMode = .always
         
-        field.borderStyle = .line
-        field.backgroundColor = UIColor(red: 0.255, green: 0.1608, blue: 0.192, alpha: 1)
-        field.textColor = .white
-        field.font = Fonts.pixelText
-        field.autocapitalizationType = .none
-        field.autocorrectionType = .no
-        return field
-    }()
+        nameField.borderStyle = .line
+        nameField.backgroundColor = UIColor(red: 0.255, green: 0.1608, blue: 0.192, alpha: 1)
+        nameField.textColor = .white
+        nameField.font = Fonts.pixelText
+        nameField.autocapitalizationType = .none
+        nameField.autocorrectionType = .no
+    }
     
-    private let roleLabel: UILabel = {
-        let label = UILabel()
-        label.textColor = .white
-        label.textAlignment = .center
-        label.font = Fonts.pixelText
-        label.text = "Enter a name or leave the field blank to follow"
-        return label
-    }()
+    private func configureRoleLabel() {
+        roleLabel.textColor = .white
+        roleLabel.textAlignment = .center
+        roleLabel.font = Fonts.pixelText
+        roleLabel.text = "Enter a name or leave the field blank to follow"
+    }
     
-    private let connectButton: UIButton = {
-        let button = UIButton(type: .system)
-        button.setTitle("connect", for: .normal)
-        button.titleLabel?.font = Fonts.pixelText
-        button.backgroundColor = .none
-        button.tintColor = .white
-        button.backgroundColor = UIColor(red: 0.1803, green: 0.1019, blue: 0.176, alpha: 1)
-        button.layer.cornerRadius = 10
-        button.addTarget(nil, action: #selector(connectTapped), for: .touchUpInside)
-        return button
-    }()
+    private func configureConnectButton() {
+        connectButton.setTitle("connect", for: .normal)
+        connectButton.titleLabel?.font = Fonts.pixelText
+        connectButton.backgroundColor = .none
+        connectButton.tintColor = .white
+        connectButton.backgroundColor = UIColor(red: 0.1803, green: 0.1019, blue: 0.176, alpha: 1)
+        connectButton.layer.cornerRadius = 10
+        connectButton.addTarget(nil, action: #selector(connectTapped), for: .touchUpInside)
+    }
     
-    private let gameNameLabel: UILabel = {
-        let label = UILabel()
-        label.textColor = .white
-        label.textAlignment = .center
-        label.font = Fonts.pixelHeading
-        label.text = "bomberman"
-        return label
-    }()
-    
-    private let stack = UIStackView()
-    
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        view.backgroundColor = .init(red: 0.149, green: 0.0745, blue: 0.101, alpha: 1)
-        configureStack()
+    private func configureGameNameLabel() {
+        gameNameLabel.textColor = .white
+        gameNameLabel.textAlignment = .center
+        gameNameLabel.font = Fonts.pixelHeading
+        gameNameLabel.text = "bomberman"
     }
 
     private func configureStack() {
         stack.axis = .vertical
         stack.spacing = 16
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        
         [gameNameLabel, roleLabel, nameField, connectButton].forEach { stack.addArrangedSubview($0) }
-        view.addSubview(stack)
         
-        NSLayoutConstraint.activate([
-            stack.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 32),
-            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -32),
-            connectButton.heightAnchor.constraint(equalToConstant: 50)
-        ])
+        view.addSubview(stack)
+        stack.pinCenterY(to: view)
+        stack.pinLeft(to: view.safeAreaLayoutGuide.leadingAnchor, 32)
+        stack.pinRight(to: view.safeAreaLayoutGuide.trailingAnchor, 32)
+        connectButton.setHeight(50)
     }
     
-    @objc private func connectTapped() {
+    @objc
+    private func connectTapped() {
         let name = nameField.text ?? ""
 
         if name.isEmpty {
-            showAlert("Введите имя для игры")
+            showAlert("Enter your name to start the game")
             return
         }
 
-        GameWebSocketService.shared.onAssignPlayerId = { id in
-            print("Назначен id: \(id)")
-        }
-
-        GameWebSocketService.shared.onGameState = { [weak self] state in
-            guard let self = self else { return }
-            print("Получено состояние: \(state.state)")
-            
-            guard state.state == "WAITING" else { return }
-            
-            guard !self.didOpenLobby else { return }
-            self.didOpenLobby = true
-            
-            DispatchQueue.main.async {
-                self.openLobby()
-            }
-        }
-
-        GameWebSocketService.shared.onDisconnected = { error in
-            print("Отключено от сервера: \(String(describing: error))")
-        }
-
-        GameWebSocketService.shared.connect()
-        let role: ClientRole = .player   // пока без spectator, раз ты имя требуешь
-        GameWebSocketService.shared.sendJoin(name: name, role: role)
-
-        print("Подключение к серверу...")
-    }
-
-    
-    private func openLobby() {
-        let vc = LobbyViewController()
-        navigationController?.pushViewController(vc, animated: true)
+        interactor.connectToGame(name: name)
     }
     
     private func showAlert(_ text: String) {
-        let alert = UIAlertController(title: "Ошибка", message: text, preferredStyle: .alert)
+        let alert = UIAlertController(title: "Error", message: text, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "OK", style: .default))
         present(alert, animated: true)
     }
