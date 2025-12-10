@@ -35,6 +35,11 @@ final class ConnectionViewController: UIViewController {
         configureStack()
     }
     
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        interactor.updateLobbyFlag()
+    }
+    
     private func configureNameTextField() {
         let placeholderText = "name"
         let placeholderColor = UIColor.lightGray
@@ -55,7 +60,7 @@ final class ConnectionViewController: UIViewController {
         nameField.borderStyle = .line
         nameField.backgroundColor = UIColor(red: 0.255, green: 0.1608, blue: 0.192, alpha: 1)
         nameField.textColor = .white
-        nameField.font = Fonts.pixelText
+        nameField.font = Fonts.pixel27
         nameField.autocapitalizationType = .none
         nameField.autocorrectionType = .no
     }
@@ -63,13 +68,13 @@ final class ConnectionViewController: UIViewController {
     private func configureRoleLabel() {
         roleLabel.textColor = .white
         roleLabel.textAlignment = .center
-        roleLabel.font = Fonts.pixelText
+        roleLabel.font = Fonts.pixel27
         roleLabel.text = "Enter a name or leave the field blank to follow"
     }
     
     private func configureConnectButton() {
         connectButton.setTitle("connect", for: .normal)
-        connectButton.titleLabel?.font = Fonts.pixelText
+        connectButton.titleLabel?.font = Fonts.pixel27
         connectButton.backgroundColor = .none
         connectButton.tintColor = .white
         connectButton.backgroundColor = UIColor(red: 0.1803, green: 0.1019, blue: 0.176, alpha: 1)

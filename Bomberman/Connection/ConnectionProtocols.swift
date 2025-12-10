@@ -9,6 +9,7 @@ import Foundation
 
 protocol ConnectionInteractionLogic {
     func connectToGame(name: String)
+    func updateLobbyFlag()
 }
 
 protocol ConnectionPresentationLogic {

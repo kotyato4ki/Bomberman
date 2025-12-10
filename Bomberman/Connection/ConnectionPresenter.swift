@@ -8,10 +8,10 @@
 import Foundation
 
 final class ConnectionPresenter: ConnectionPresentationLogic {
-    public var view: ConnectionViewController?
+    var view: ConnectionViewController?
     
     func routingToLobby() {
-        let vc = LobbyViewController()
+        let vc = LobbyAssembly.build()
         view?.navigationController?.pushViewController(vc, animated: true)
     }
 }
