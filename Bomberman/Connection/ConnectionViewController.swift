@@ -28,6 +28,12 @@ final class ConnectionViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = Colors.background
+        
+        let backgroundImage = UIImageView(frame: UIScreen.main.bounds)
+        backgroundImage.image = UIImage(named: "background")
+        backgroundImage.contentMode = .scaleAspectFill
+        view.insertSubview(backgroundImage, at: 0)
+        
         configureNameTextField()
         configureRoleLabel()
         configureConnectButton()

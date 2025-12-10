@@ -44,6 +44,11 @@ final class LobbyViewController: UIViewController {
         readyButton.addTarget(self, action: #selector(readyButtonTapped), for: .touchUpInside)
         view.backgroundColor = Colors.background
         
+        let backgroundImage = UIImageView(frame: UIScreen.main.bounds)
+        backgroundImage.image = UIImage(named: "background")
+        backgroundImage.contentMode = .scaleAspectFill
+        view.insertSubview(backgroundImage, at: 0)
+        
         configureUI()
     }
     
