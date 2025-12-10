@@ -9,49 +9,13 @@ import UIKit
 
 final class LobbyViewController: UIViewController {
     
-    private let titleLabel: UILabel = {
-        let label = UILabel()
-        label.text = "Lobby"
-        label.textColor = .white
-        label.font = Fonts.pixelHeading
-        label.translatesAutoresizingMaskIntoConstraints = false
-        return label
-    }()
+    private let interactor: LobbyInteractionLogic
+    private let titleLabel = UILabel()
+    private let tableView = UITableView()
+    private let readyButton = UIButton(type: .system)
+    private let backButton = UIButton(type: .system)
     
-    private let tableView: UITableView = {
-        let tableView = UITableView()
-        tableView.translatesAutoresizingMaskIntoConstraints = false
-        tableView.separatorStyle = .none
-        tableView.backgroundColor = .clear
-        return tableView
-    }()
-    
-    private let readyButton: UIButton = {
-        let button = UIButton(type: .system)
-        button.setTitle("ready", for: .normal)
-        button.backgroundColor = UIColor(red: 0.1803, green: 0.1019, blue: 0.176, alpha: 1)
-        button.tintColor = .systemGreen
-        button.layer.cornerRadius = 12
-        button.titleLabel?.font = Fonts.pixel27
-        button.translatesAutoresizingMaskIntoConstraints = false
-        return button
-    }()
-    
-    private let backButton: UIButton = {
-        let button = UIButton(type: .system)
-        button.translatesAutoresizingMaskIntoConstraints = false
-
-        let image = UIImage(named: "back_button")?.withRenderingMode(.alwaysTemplate)
-        button.setImage(image, for: .normal)
-        button.tintColor = .white
-        button.configuration = nil
-        button.imageView?.contentMode = .scaleAspectFit
-        
-        return button
-    }()
-
-    
-    private var players: [PlayerModel] = [] {
+    var players: [PlayerModel] = [] {
         didSet {
             tableView.reloadData()
             updateReadyState()
@@ -64,7 +28,14 @@ final class LobbyViewController: UIViewController {
         }
     }
     
-    private let service = GameWebSocketService.shared
+    init(interactor: LobbyInteractionLogic) {
+        self.interactor = interactor
+        super.init(nibName: nil, bundle: nil)
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -72,97 +43,99 @@ final class LobbyViewController: UIViewController {
         navigationController?.setNavigationBarHidden(true, animated: false)
         readyButton.addTarget(self, action: #selector(readyButtonTapped), for: .touchUpInside)
         view.backgroundColor = Colors.background
-        setupUI()
-        setupTableView()
-        setupCallbacks()
+        
+        configureUI()
     }
     
     deinit {
-        service.onGameState = nil
+        interactor.updateGameStateDeinit()
     }
-
-
     
-    @objc private func backButtonTapped() {
+    @objc
+    private func backButtonTapped() {
         navigationController?.popViewController(animated: true)
     }
     
-    private func setupUI() {
+    private func configureUI() {
+        configureBackButton()
+        configureTitleLabel()
+        configureReadyButton()
+        configureTableView()
+        configureCallbacks()
+    }
+    
+    private func configureBackButton() {
+        let image = UIImage(named: "back_button")?.withRenderingMode(.alwaysTemplate)
+        backButton.setImage(image, for: .normal)
+        backButton.tintColor = .white
+        backButton.configuration = nil
+        backButton.imageView?.contentMode = .scaleAspectFit
+        
         view.addSubview(backButton)
-        view.addSubview(titleLabel)
-        view.addSubview(tableView)
-        view.addSubview(readyButton)
-        
         backButton.addTarget(self, action: #selector(backButtonTapped), for: .touchUpInside)
+        backButton.pinLeft(to: view.safeAreaLayoutGuide.leadingAnchor, 8)
+        backButton.pinTop(to: view.safeAreaLayoutGuide.topAnchor, 16)
+    }
+    
+    private func configureTitleLabel() {
+        titleLabel.text = "Lobby"
+        titleLabel.textColor = .white
+        titleLabel.font = Fonts.pixelHeading
         
-        NSLayoutConstraint.activate([
-            backButton.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 8),
-            backButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16),
-            
-            titleLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            titleLabel.centerYAnchor.constraint(equalTo: backButton.centerYAnchor),
-            
-            tableView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 16),
-            tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
-            tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
-            tableView.bottomAnchor.constraint(equalTo: readyButton.topAnchor, constant: -16),
-            
-            readyButton.widthAnchor.constraint(equalToConstant: 300),
-            readyButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16),
-            readyButton.heightAnchor.constraint(equalToConstant: 50)
-        ])
+        view.addSubview(titleLabel)
+        titleLabel.pinCenterX(to: view.centerXAnchor)
+        titleLabel.pinCenterY(to: backButton.centerYAnchor)
+    }
+    
+    private func configureReadyButton() {
+        readyButton.setTitle("ready", for: .normal)
+        readyButton.backgroundColor = UIColor(red: 0.1803, green: 0.1019, blue: 0.176, alpha: 1)
+        readyButton.tintColor = .systemGreen
+        readyButton.layer.cornerRadius = 12
+        readyButton.titleLabel?.font = Fonts.pixel27
+        
+        view.addSubview(readyButton)
+        readyButton.setWidth(300)
+        readyButton.setHeight(50)
+        readyButton.pinBottom(to: view.safeAreaLayoutGuide.bottomAnchor, 16)
         readyButton.pinCenterX(to: view)
     }
-
     
-    private func setupTableView() {
+    private func configureTableView() {
+        tableView.separatorStyle = .none
+        tableView.backgroundColor = .clear
         tableView.dataSource = self
         tableView.delegate = self
         tableView.register(PlayerCell.self, forCellReuseIdentifier: PlayerCell.reuseIdentifier)
+        
+        view.addSubview(tableView)
+        tableView.pinTop(to: titleLabel.bottomAnchor, 16)
+        tableView.pinLeft(to: view.leadingAnchor, 16)
+        tableView.pinRight(to: view.trailingAnchor, 16)
+        tableView.pinBottom(to: readyButton.topAnchor, 16)
     }
     
-    private func setupCallbacks() {
-        service.onGameState = { [weak self] state in
-            DispatchQueue.main.async {
-                guard let self = self else { return }
-                
-                switch state.state {
-                case "WAITING":
-                    self.players = state.players
-                    
-                case "IN_PROGRESS":
-                    self.startGame(with: state)
-                    
-                case "GAME_OVER":
-                    print("GAME_OVER, winner: \(state.winner ?? "nil")")
-                    
-                default:
-                    break
-                }
+    private func configureCallbacks() {
+        interactor.configureCallbacks()
+    }
+
+    private func updateReadyState() {
+        interactor.getMyPlayerId { [weak self] myId in
+            guard let self = self else { return }
+            
+            guard let myId = myId else {
+                self.isMyReady = false
+                return
+            }
+            
+            if let me = self.players.first(where: { $0.id == myId }) {
+                self.isMyReady = me.ready
+            } else {
+                self.isMyReady = false
             }
         }
     }
-    
-    private func startGame(with state: GameStateModel) {
-        // TODO: тут переход на экран игры.
-        print("Игра началась! Переходим на поле…")
-    }
 
-
-    
-    private func updateReadyState() {
-        guard let myId = service.currentPlayerId else {
-            isMyReady = false
-            return
-        }
-        
-        if let me = players.first(where: { $0.id == myId }) {
-            isMyReady = me.ready
-        } else {
-            isMyReady = false
-        }
-    }
-    
     private func updateReadyButtonAppearance() {
         let title = isMyReady ? "not ready" : "ready"
         let color: UIColor = isMyReady ? .systemYellow : .systemGreen
@@ -175,9 +148,7 @@ final class LobbyViewController: UIViewController {
     }
     
     @objc private func readyButtonTapped() {
-        service.sendReady()
-        isMyReady.toggle()
-        updateReadyButtonAppearance()
+        interactor.sendReady()
     }
 }
 
