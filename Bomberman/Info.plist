@@ -4,6 +4,7 @@
 <dict>
 	<key>UIAppFonts</key>
 	<array>
+		<string>AwesomePixels-Yellow.otf</string>
 		<string>PixelifySans-VariableFont_wght.ttf</string>
 	</array>
 	<key>UIApplicationSceneManifest</key>
