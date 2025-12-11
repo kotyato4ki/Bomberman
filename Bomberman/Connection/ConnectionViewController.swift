@@ -89,7 +89,6 @@ final class ConnectionViewController: UIViewController {
     }
     
     private func configureGameNameLabel() {
-        gameNameLabel.textColor = .white
         gameNameLabel.textAlignment = .center
         gameNameLabel.font = Fonts.pixelHeading
         gameNameLabel.text = "bomberman"
