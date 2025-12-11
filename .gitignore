@@ -1,7 +1,6 @@
 # Xcode
 .DS_Store
 build/
-Fonts/
 *.pbxuser
 !default.pbxuser
 *.mode1v3
