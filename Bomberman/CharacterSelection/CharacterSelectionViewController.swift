@@ -5,7 +5,6 @@
 //  Created by Nick on 11.12.2025.
 //
 
-import Foundation
 import UIKit
 
 final class CharacterSelectionViewController: UIViewController {
@@ -13,7 +12,8 @@ final class CharacterSelectionViewController: UIViewController {
     private let interactor: CharacterSelectionInteractionLogic
     
     private let titleLabel = UILabel()
-    private let collectionView: UICollectionView
+    private let scrollView = UIScrollView()
+    private let stackView = UIStackView()
     private let confirmButton = UIButton(type: .system)
     private let backButton = UIButton(type: .system)
     
@@ -22,11 +22,6 @@ final class CharacterSelectionViewController: UIViewController {
     
     init(interactor: CharacterSelectionInteractionLogic) {
         self.interactor = interactor
-        let layout = UICollectionViewFlowLayout()
-        layout.itemSize = CGSize(width: 120, height: 160)
-        layout.minimumInteritemSpacing = 20
-        layout.sectionInset = UIEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
-        self.collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
         super.init(nibName: nil, bundle: nil)
     }
     
@@ -58,15 +53,27 @@ final class CharacterSelectionViewController: UIViewController {
         titleLabel.pinTop(to: view.safeAreaLayoutGuide.topAnchor, 30)
         titleLabel.pinCenterX(to: view)
         
-        // CollectionView
-        collectionView.backgroundColor = .clear
-        collectionView.dataSource = self
-        collectionView.delegate = self
-        collectionView.register(CharacterCell.self, forCellWithReuseIdentifier: CharacterCell.reuseId)
-        view.addSubview(collectionView)
-        collectionView.pinTop(to: titleLabel.bottomAnchor, 10)
-        collectionView.pinHorizontal(to: view, 20)
-        collectionView.pinBottom(to: view.safeAreaLayoutGuide.bottomAnchor, -100)
+        // ScrollView + StackView
+        scrollView.showsHorizontalScrollIndicator = false
+        view.addSubview(scrollView)
+        scrollView.pinTop(to: titleLabel.bottomAnchor, 20)
+        scrollView.pinHorizontal(to: view, 20)
+        scrollView.pinBottom(to: view.safeAreaLayoutGuide.bottomAnchor, 20)
+
+        stackView.axis = .horizontal
+        stackView.spacing = 20
+        stackView.alignment = .center
+        scrollView.addSubview(stackView)
+
+        // Ограничения для центрирования стека
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            stackView.topAnchor.constraint(equalTo: scrollView.topAnchor),
+            stackView.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor),
+            stackView.centerXAnchor.constraint(equalTo: scrollView.centerXAnchor),
+            stackView.heightAnchor.constraint(equalTo: scrollView.heightAnchor)
+        ])
+
         
         // Confirm Button
         confirmButton.setTitle("Confirm", for: .normal)
@@ -105,14 +112,36 @@ final class CharacterSelectionViewController: UIViewController {
     
     func displayCharacters(_ characters: [CharacterModel]) {
         self.characters = characters
-        collectionView.reloadData()
+        
+        // Очистим стек
+        stackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        
+        for character in characters {
+            let cell = CharacterCell()
+            cell.configure(with: character)
+            cell.widthAnchor.constraint(equalToConstant: 120).isActive = true
+            cell.heightAnchor.constraint(equalToConstant: 160).isActive = true
+            
+            let tapGesture = UITapGestureRecognizer(target: self, action: #selector(characterTapped(_:)))
+            cell.addGestureRecognizer(tapGesture)
+            cell.isUserInteractionEnabled = true
+            
+            stackView.addArrangedSubview(cell)
+        }
+    }
+    
+    @objc private func characterTapped(_ sender: UITapGestureRecognizer) {
+        guard let cell = sender.view as? CharacterCell,
+              let index = stackView.arrangedSubviews.firstIndex(of: cell) else { return }
+        let character = characters[index]
+        interactor.selectCharacter(character)
     }
     
     func highlightSelectedCharacter(_ character: CharacterModel) {
         selectedCharacter = character
-        collectionView.visibleCells.forEach { ($0 as? CharacterCell)?.setSelected(false) }
+        stackView.arrangedSubviews.forEach { ($0 as? CharacterCell)?.setSelected(false) }
         if let index = characters.firstIndex(of: character),
-           let cell = collectionView.cellForItem(at: IndexPath(item: index, section: 0)) as? CharacterCell {
+           let cell = stackView.arrangedSubviews[index] as? CharacterCell {
             cell.setSelected(true)
         }
     }
@@ -125,25 +154,6 @@ final class CharacterSelectionViewController: UIViewController {
     @objc private func confirmTapped() {
         guard let selected = selectedCharacter else { return }
         interactor.selectCharacter(selected)
-        // Здесь будет переход в лобби или сразу в игру
         navigationController?.pushViewController(LobbyAssembly.build(), animated: true)
-    }
-}
-
-// MARK: - CollectionView DataSource & Delegate
-extension CharacterSelectionViewController: UICollectionViewDataSource, UICollectionViewDelegate {
-    func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
-        characters.count
-    }
-    
-    func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
-        let cell = collectionView.dequeueReusableCell(withReuseIdentifier: CharacterCell.reuseId, for: indexPath) as! CharacterCell
-        cell.configure(with: characters[indexPath.item])
-        return cell
-    }
-    
-    func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
-        let character = characters[indexPath.item]
-        interactor.selectCharacter(character)
     }
 }
