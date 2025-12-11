@@ -15,4 +15,9 @@ final class ConnectionPresenter: ConnectionPresentationLogic {
         let vc = LobbyAssembly.build()
         view?.navigationController?.pushViewController(vc, animated: true)
     }
+    
+    func routingToChooseCharacter() {
+        let vc = CharacterSelectionAssembly.build()
+        view?.navigationController?.pushViewController(vc, animated: true)
+    }
 }
