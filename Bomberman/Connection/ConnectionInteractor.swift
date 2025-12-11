@@ -30,7 +30,8 @@ final class ConnectionInteractor: ConnectionInteractionLogic {
             self.didOpenLobby = true
             
             DispatchQueue.main.async {
-                self.presenter.routingToLobby()
+                //self.presenter.routingToLobby()
+                self.presenter.routingToChooseCharacter()
             }
         }
 

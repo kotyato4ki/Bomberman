@@ -14,4 +14,5 @@ protocol ConnectionInteractionLogic {
 
 protocol ConnectionPresentationLogic {
     func routingToLobby()
+    func routingToChooseCharacter()
 }

@@ -169,4 +169,17 @@ final class GameWebSocketService: NSObject {
             self?.onDisconnected?(error)
         }
     }
+
+    func sendCharacterSelection(_ characterName: String) {
+        let message = [
+            "type": "select_character",
+            "character_name": characterName
+        ]
+        
+        // Заглушка — просто печатаем
+        print("Sending character selection: \(characterName)")
+        
+        // Раскомментируй, когда будет реальный веб-сокет
+        // send(message)
+    }
 }
