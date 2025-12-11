@@ -18,10 +18,10 @@ final class CharacterSelectionInteractor: CharacterSelectionInteractionLogic {
     func loadCharacters() {
         // В реальной игре — запрос с сервера. Пока хардкод:
         let characters = [
-            CharacterModel(name: "White", previewImageName: "char_white"),
-            CharacterModel(name: "Black", previewImageName: "char_black"),
-            CharacterModel(name: "Red",   previewImageName: "char_red"),
-            CharacterModel(name: "Blue",  previewImageName: "char_blue")
+            CharacterModel(name: "1", previewImageName: "character1"),
+            CharacterModel(name: "2", previewImageName: "character2"),
+            CharacterModel(name: "3",   previewImageName: "character3"),
+            CharacterModel(name: "4",  previewImageName: "character4")
         ]
         presenter.presentCharacters(characters)
     }
