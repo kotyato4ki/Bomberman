@@ -1,0 +1,346 @@
+import asyncio
+import websockets
+import json
+import time
+import uuid
+import random
+import os
+
+# --- Константы (серверные) ---
+GRID_WIDTH = 20
+GRID_HEIGHT = 15
+BOMB_TIMER = 3
+EXPLOSION_DURATION = 0.5
+BLAST_RADIUS = 2
+GAME_TICK_RATE = 1 / 60
+MIN_PLAYERS_TO_START = 2
+GAME_OVER_DURATION = 5
+ROUND_DURATION = 120 # 2 минуты
+# ИСПРАВЛЕНО: Шанс уменьшен для лучшего баланса.
+# При 60 тиках/сек это ~1 бомба каждые 4 секунды (1 / (60 * 0.004))
+ENDGAME_BOMB_CHANCE = 0.004
+
+# Глобальный словарь для хранения загруженных карт
+AVAILABLE_MAPS = {}
+
+def load_maps():
+    """Загружает все карты из папки /maps."""
+    maps_dir = "maps"
+    if os.path.exists(maps_dir):
+        for filename in os.listdir(maps_dir):
+            if filename.endswith(".txt"):
+                try:
+                    with open(os.path.join(maps_dir, filename), 'r') as f:
+                        map_data = f.read().strip().split('\n')
+                        if len(map_data) == GRID_HEIGHT and all(len(row) == GRID_WIDTH for row in map_data):
+                            map_name = os.path.splitext(filename)[0]
+                            AVAILABLE_MAPS[map_name] = map_data
+                            print(f"Карта '{map_name}' успешно загружена.")
+                        else:
+                            print(f"Ошибка: Карта '{filename}' имеет неверные размеры.")
+                except Exception as e:
+                    print(f"Не удалось загрузить карту '{filename}': {e}")
+
+    if not AVAILABLE_MAPS:
+        print("КРИТИЧЕСКАЯ ОШИБКА: Ни одной корректной карты не найдено! Игра не может начаться.")
+        exit()
+
+# --- Игровые классы (сервер) ---
+class Player:
+    def __init__(self, id, name, start_x, start_y):
+        self.id, self.name = id, name
+        self.start_x, self.start_y = start_x, start_y
+        self.x, self.y = start_x, start_y
+        self.alive = True
+        self.ready = False
+
+    def move(self, dx, dy, game):
+        if not self.alive: return
+        new_x, new_y = self.x + dx, self.y + dy
+        if 0 <= new_x < GRID_WIDTH and 0 <= new_y < GRID_HEIGHT and game.map[new_y][new_x] in [' ', 'p']:
+            self.x, self.y = new_x, new_y
+            
+    # ИСПРАВЛЕНО: Метод теперь принимает новые стартовые координаты для безопасного рестарта
+    def reset(self, start_x, start_y):
+        self.start_x, self.start_y = start_x, start_y
+        self.x, self.y = self.start_x, self.start_y
+        self.alive = True
+        self.ready = False
+
+    def to_dict(self):
+        return {"id": self.id, "name": self.name, "x": self.x, "y": self.y, "alive": self.alive, "ready": self.ready}
+
+class Bomb:
+    def __init__(self, x, y):
+        self.x, self.y = x, y
+        self.place_time = time.time()
+    def is_expired(self): return time.time() - self.place_time > BOMB_TIMER
+    def to_dict(self): return {"x": self.x, "y": self.y}
+
+class Explosion:
+    def __init__(self, x, y):
+        self.x, self.y = x, y
+        self.spawn_time = time.time()
+    def is_expired(self): return time.time() - self.spawn_time > EXPLOSION_DURATION
+    def to_dict(self): return {"x": self.x, "y": self.y}
+
+class Game:
+    def __init__(self):
+        self.players = {}
+        self.reset()
+
+    # ИСПРАВЛЕНО: Логика полностью переработана для устранения критического бага
+    def reset(self):
+        print("--- ПЕРЕЗАПУСК ИГРЫ ---")
+        
+        # Подбираем карту, на которой хватит места для всех текущих игроков
+        num_current_players = len(self.players)
+        suitable_maps = []
+        for name, layout in AVAILABLE_MAPS.items():
+            if sum(row.count('p') for row in layout) >= num_current_players:
+                suitable_maps.append((name, layout))
+
+        if not suitable_maps:
+            print(f"Предупреждение: не найдено карт для {num_current_players} игроков. Используется любая карта.")
+            # Если подходящих карт нет, используем любую, что может привести к отключению игроков,
+            # но сервер не упадет. В идеале, все карты должны поддерживать макс. игроков.
+            map_name, map_layout = random.choice(list(AVAILABLE_MAPS.items()))
+        else:
+            map_name, map_layout = random.choice(suitable_maps)
+
+        print(f"--- Выбрана карта: {map_name} ---")
+        self.original_map = [list(row) for row in map_layout]
+        self.map = [list(row) for row in self.original_map]
+        
+        self.bombs, self.explosions = [], []
+        self.state = "WAITING"
+        self.winner, self.game_over_time, self.round_start_time = None, None, None
+        self.endgame_mode = False
+        
+        # Безопасно сбрасываем состояние игроков
+        self.available_starts = self._find_start_positions()
+        random.shuffle(self.available_starts) # Перемешиваем, чтобы позиции менялись
+        
+        for player in self.players.values():
+            if self.available_starts:
+                start_pos = self.available_starts.pop(0)
+                player.reset(start_pos[0], start_pos[1])
+            else:
+                # Этот код выполнится, только если мы не нашли подходящую карту.
+                # Безопаснее просто пометить игрока как неживого, чем удалять.
+                print(f"Не хватило места для игрока {player.name}. Он будет наблюдателем в этом раунде.")
+                player.alive = False
+
+
+    def _find_start_positions(self):
+        starts = []
+        for y, row in enumerate(self.original_map):
+            for x, tile in enumerate(row):
+                if tile == 'p':
+                    starts.append((x, y))
+        return starts
+
+    def add_player(self, player_id, player_name):
+        # Находим все стартовые позиции, в т.ч. занятые
+        all_starts = self._find_start_positions()
+        # Находим уже занятые позиции
+        taken_starts = {(p.start_x, p.start_y) for p in self.players.values()}
+        # Находим свободные
+        free_starts = [pos for pos in all_starts if pos not in taken_starts]
+        
+        if not free_starts:
+            print("Нет свободных мест для нового игрока.")
+            return None # Возвращаем None, если не удалось добавить
+            
+        start_pos = free_starts[0]
+        player = Player(player_id, player_name, start_pos[0], start_pos[1])
+        self.players[player_id] = player
+        print(f"Игрок '{player_name}' ({player_id}) добавлен на {start_pos}")
+        return player
+
+    def remove_player(self, player_id):
+        if player_id in self.players:
+            player = self.players.pop(player_id)
+            print(f"Игрок '{player.name}' ({player_id}) удален.")
+            self.check_game_start() # Проверяем, не отменился ли старт игры
+
+    def handle_input(self, player_id, action):
+        player = self.players.get(player_id)
+        if not player: return
+
+        if self.state == "WAITING":
+            if action['type'] == 'ready':
+                player.ready = not player.ready
+                print(f"Игрок '{player.name}' изменил статус готовности на: {player.ready}")
+                self.check_game_start()
+            return
+
+        if self.state == "IN_PROGRESS" and player.alive:
+            if action['type'] == 'move': player.move(action['dx'], action['dy'], self)
+            elif action['type'] == 'place_bomb': self.place_bomb(player.x, player.y)
+
+    def place_bomb(self, x, y):
+        if not any(b.x == x and b.y == y for b in self.bombs): self.bombs.append(Bomb(x, y))
+
+    def update(self):
+        if self.state == "GAME_OVER":
+            if time.time() - self.game_over_time > GAME_OVER_DURATION: self.reset()
+        elif self.state == "IN_PROGRESS":
+            self.update_bombs()
+            self.update_explosions()
+            self.check_endgame()
+            if self.endgame_mode: self.spawn_random_bomb()
+            self.check_win_condition()
+
+    def check_game_start(self):
+        if self.state == "WAITING" and len(self.players) >= MIN_PLAYERS_TO_START:
+            all_ready = all(p.ready for p in self.players.values())
+            if all_ready:
+                self.state = "IN_PROGRESS"
+                self.round_start_time = time.time()
+                print("--- ВСЕ ГОТОВЫ! ИГРА НАЧАЛАСЬ ---")
+
+    def check_win_condition(self):
+        alive_players = [p for p in self.players.values() if p.alive]
+        if self.state == "IN_PROGRESS" and len(alive_players) <= 1:
+            self.state = "GAME_OVER"
+            self.game_over_time = time.time()
+            self.endgame_mode = False
+            self.winner = alive_players[0].name if alive_players else "НИЧЬЯ"
+            print(f"--- ИГРА ОКОНЧЕНА! ПОБЕДИТЕЛЬ: {self.winner} ---")
+            
+    # УЛУЧШЕНИЕ: Новая функция для проверки стен
+    def are_all_bricks_destroyed(self):
+        return not any('.' in row for row in self.map)
+
+    def check_endgame(self):
+        time_is_up = self.round_start_time and (time.time() - self.round_start_time > ROUND_DURATION)
+        if not self.endgame_mode and (time_is_up or self.are_all_bricks_destroyed()):
+            self.endgame_mode = True
+            print("--- ЭНДГЕЙМ АКТИВИРОВАН ---")
+
+    def spawn_random_bomb(self):
+        if random.random() < ENDGAME_BOMB_CHANCE:
+            empty_tiles = [(x, y) for y, row in enumerate(self.map) for x, tile in enumerate(row) if self.original_map[y][x] in [' ', 'p', '.']]
+            if empty_tiles:
+                x, y = random.choice(empty_tiles)
+                self.place_bomb(x, y)
+
+    def update_bombs(self):
+        for bomb in [b for b in self.bombs if b.is_expired()]:
+            self.bombs.remove(bomb)
+            self.create_explosion(bomb.x, bomb.y)
+
+    def update_explosions(self):
+        self.explosions = [e for e in self.explosions if not e.is_expired()]
+
+    def create_explosion(self, start_x, start_y):
+        self.explosions.append(Explosion(start_x, start_y))
+        self._check_collisions(start_x, start_y)
+        for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+            for i in range(1, BLAST_RADIUS + 1):
+                x, y = start_x + dx * i, start_y + dy * i
+                if not (0 <= x < GRID_WIDTH and 0 <= y < GRID_HEIGHT and self.map[y][x] != '#'): break
+                self.explosions.append(Explosion(x, y))
+                self._check_collisions(x, y)
+                if self.map[y][x] == '.':
+                    self.map[y][x] = ' '
+                    break
+
+    def _check_collisions(self, x, y):
+        for player in self.players.values():
+            if player.alive and player.x == x and player.y == y:
+                player.alive = False
+                print(f"Игрок '{player.name}' погиб.")
+
+    def get_state(self):
+        time_remaining = None
+        if self.state == "IN_PROGRESS" and self.round_start_time:
+            time_remaining = ROUND_DURATION - (time.time() - self.round_start_time)
+        return {"state": self.state, "winner": self.winner, "time_remaining": time_remaining, "map": self.map, "players": [p.to_dict() for p in self.players.values()], "bombs": [b.to_dict() for b in self.bombs], "explosions": [e.to_dict() for e in self.explosions]}
+
+# --- Логика WebSocket (без изменений) ---
+PLAYER_CLIENTS = {}
+SPECTATOR_CLIENTS = set()
+
+load_maps()
+GAME = Game()
+
+async def broadcast_state():
+    if not PLAYER_CLIENTS and not SPECTATOR_CLIENTS: return
+    
+    state = GAME.get_state()
+    message = json.dumps({"type": "game_state", "payload": state})
+    
+    all_recipients = list(PLAYER_CLIENTS.values()) + list(SPECTATOR_CLIENTS)
+    if not all_recipients: return
+
+    send_tasks = [client.send(message) for client in all_recipients]
+    await asyncio.gather(*send_tasks, return_exceptions=True)
+
+async def game_loop():
+    while True:
+        GAME.update()
+        await broadcast_state()
+        await asyncio.sleep(GAME_TICK_RATE)
+
+async def handler(websocket):
+    client_id = None
+    client_type = None
+    try:
+        message = await websocket.recv()
+        data = json.loads(message)
+        
+        if data.get("type") == "join":
+            role = data.get("role", "player")
+            if role == "player":
+                player_name = data.get("name", "Аноним")
+                client_id = str(uuid.uuid4())
+                
+                if GAME.add_player(client_id, player_name) is None:
+                    # Если добавить игрока не удалось (нет мест), закрываем соединение
+                    await websocket.close(code=1008, reason="Server is full")
+                    print(f"Отклонено подключение для '{player_name}': сервер полон.")
+                    return
+
+                client_type = "player"
+                PLAYER_CLIENTS[client_id] = websocket
+                await websocket.send(json.dumps({"type": "assign_id", "payload": client_id}))
+                print(f"Игрок '{player_name}' ({client_id}) подключился.")
+            else:
+                client_id = websocket
+                client_type = "spectator"
+                SPECTATOR_CLIENTS.add(websocket)
+                print(f"Наблюдатель {websocket.remote_address} подключился.")
+        else:
+            return
+
+        if client_type == "player":
+            async for message in websocket:
+                action = json.loads(message)
+                GAME.handle_input(client_id, action)
+        else:
+            await websocket.wait_closed()
+
+    except (websockets.exceptions.ConnectionClosed, json.JSONDecodeError):
+        print(f"Соединение с {client_type if client_type else 'клиентом'} ({client_id}) потеряно.")
+    finally:
+        if client_type == "player" and client_id in PLAYER_CLIENTS:
+            del PLAYER_CLIENTS[client_id]
+            GAME.remove_player(client_id)
+        elif client_type == "spectator" and client_id in SPECTATOR_CLIENTS:
+            SPECTATOR_CLIENTS.remove(client_id)
+            print(f"Наблюдатель отключился.")
+
+async def main():
+    print("Запуск игрового цикла...")
+    asyncio.create_task(game_loop())
+    async with websockets.serve(handler, "localhost", 8765):
+        print("WebSocket сервер запущен на ws://localhost:8765")
+        await asyncio.Future()
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\nСервер остановлен.")

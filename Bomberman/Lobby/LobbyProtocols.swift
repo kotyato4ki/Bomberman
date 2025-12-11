@@ -17,4 +17,5 @@ protocol LobbyInteractionLogic {
 protocol LobbyPresentationLogic {
     func updatePlayers(_ players: [PlayerModel])
     func startGame(with: GameStateModel)
+    func routeToGameZone()
 }
