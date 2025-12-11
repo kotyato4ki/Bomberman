@@ -18,6 +18,7 @@ struct ClientMessage: Codable {
     let name: String?
     let dx: Int?
     let dy: Int?
+    let characterName: String?
     
     
     static func join(name: String?, role: ClientRole) -> ClientMessage {
@@ -26,37 +27,31 @@ struct ClientMessage: Codable {
             role: role.rawValue,
             name: role == .player ? name : nil,
             dx: nil,
-            dy: nil
+            dy: nil,
+            characterName: nil
         )
     }
     
     static func ready() -> ClientMessage {
-        ClientMessage(
-            type: "ready",
-            role: nil,
-            name: nil,
-            dx: nil,
-            dy: nil
-        )
+        ClientMessage(type: "ready", role: nil, name: nil, dx: nil, dy: nil, characterName: nil)
     }
     
     static func move(dx: Int, dy: Int) -> ClientMessage {
-        ClientMessage(
-            type: "move",
-            role: nil,
-            name: nil,
-            dx: dx,
-            dy: dy
-        )
+        ClientMessage(type: "move", role: nil, name: nil, dx: dx, dy: dy, characterName: nil)
     }
     
     static func placeBomb() -> ClientMessage {
+        ClientMessage(type: "place_bomb", role: nil, name: nil, dx: nil, dy: nil, characterName: nil)
+    }
+    
+    static func selectCharacter(_ characterName: String) -> ClientMessage {
         ClientMessage(
-            type: "place_bomb",
+            type: "select_character",
             role: nil,
             name: nil,
             dx: nil,
-            dy: nil
+            dy: nil,
+            characterName: characterName
         )
     }
 }
