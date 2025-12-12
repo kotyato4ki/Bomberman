@@ -1,76 +1,85 @@
-//
-//  GameZoneViewController.swift
-//  Bomberman
-//
-//  Created by лизо4ка курунок on 10.12.2025.
-//
-
 import UIKit
+import SpriteKit
 
 final class GameZoneViewController: UIViewController {
-    
+
     private let interactor: GameZoneInteractionLogic
+
     private let backButton = UIButton(type: .system)
+
+    // Общий контейнер
     private let gameMapView = UIView()
-    
+
+    // Контейнер для UIKit-тайлов (его чистим в renderMap)
+    private let mapTilesView = UIView()
+
+    // SpriteKit поверх
+    private let skView = SKView()
+    private var gameScene: GameScene?
+
     // Кнопки управления
     private let upButton = UIButton(type: .system)
     private let downButton = UIButton(type: .system)
     private let leftButton = UIButton(type: .system)
     private let rightButton = UIButton(type: .system)
-    
+    private let bombButton = UIButton(type: .system)
+
     private var gameState: GameStateModel?
-    
+
+    private var didShowGameOverOverlay = false
+    private var overlayView: UIView?
+
+    // Чтобы реже пересобирать карту
+    private var lastRenderedMapSignature: Int?
+
     init(interactor: GameZoneInteractionLogic) {
         self.interactor = interactor
         super.init(nibName: nil, bundle: nil)
     }
-    
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-    
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
     override func viewDidLoad() {
         super.viewDidLoad()
-        
+
         navigationController?.setNavigationBarHidden(true, animated: false)
-        
-        // Создаем паттерн из картинки gamezone, увеличенной в 2.5 раза
+
         if let originalImage = UIImage(named: "gamezone") {
             let scaledImage = scaleImage(originalImage, by: 2.5)
-            let patternColor = UIColor(patternImage: scaledImage)
-            view.backgroundColor = patternColor
+            view.backgroundColor = UIColor(patternImage: scaledImage)
         } else {
             view.backgroundColor = Colors.background
         }
-        
+
         configureUI()
+        configureSpriteKit()
         configureCallbacks()
     }
-    
+
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        // Перерисовываем карту при изменении размеров view
+
+        // 1) перерисовать UIKit карту при изменении размеров
         if let state = gameState {
             renderMap(state.map)
+            syncSceneLayoutIfPossible(with: state.map)
         }
     }
-    
-    deinit {
-        interactor.updateGameStateDeinit()
-    }
-    
-    @objc
-    private func backButtonTapped() {
+
+    deinit { interactor.updateGameStateDeinit() }
+
+    @objc private func backButtonTapped() {
         navigationController?.popViewController(animated: true)
     }
-    
+
+    // MARK: - UI
+
     private func configureUI() {
-        configureBackButton()
         configureGameMapView()
+        configureBackButton()
         configureControlButtons()
     }
-    
+
     private func configureGameMapView() {
         gameMapView.backgroundColor = .clear
         view.addSubview(gameMapView)
@@ -78,139 +87,310 @@ final class GameZoneViewController: UIViewController {
         gameMapView.pinLeft(to: view.leadingAnchor)
         gameMapView.pinRight(to: view.trailingAnchor)
         gameMapView.pinBottom(to: view.bottomAnchor)
+
+        // UIKit тайлы рисуем СЮДА
+        mapTilesView.backgroundColor = .clear
+        gameMapView.addSubview(mapTilesView)
+        mapTilesView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            mapTilesView.topAnchor.constraint(equalTo: gameMapView.topAnchor),
+            mapTilesView.leadingAnchor.constraint(equalTo: gameMapView.leadingAnchor),
+            mapTilesView.trailingAnchor.constraint(equalTo: gameMapView.trailingAnchor),
+            mapTilesView.bottomAnchor.constraint(equalTo: gameMapView.bottomAnchor)
+        ])
+
+        // SKView поверх тайлов
+        skView.backgroundColor = .clear
+        skView.allowsTransparency = true
+        skView.isOpaque = false
+        gameMapView.addSubview(skView)
+
+        skView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            skView.topAnchor.constraint(equalTo: gameMapView.topAnchor),
+            skView.leadingAnchor.constraint(equalTo: gameMapView.leadingAnchor),
+            skView.trailingAnchor.constraint(equalTo: gameMapView.trailingAnchor),
+            skView.bottomAnchor.constraint(equalTo: gameMapView.bottomAnchor)
+        ])
     }
-    
+
     private func configureBackButton() {
         let image = UIImage(named: "back_button")?.withRenderingMode(.alwaysTemplate)
         backButton.setImage(image, for: .normal)
         backButton.tintColor = .white
         backButton.configuration = nil
         backButton.imageView?.contentMode = .scaleAspectFit
-        
+
         view.addSubview(backButton)
         backButton.addTarget(self, action: #selector(backButtonTapped), for: .touchUpInside)
         backButton.pinLeft(to: view.safeAreaLayoutGuide.leadingAnchor, 4)
         backButton.pinTop(to: view.safeAreaLayoutGuide.topAnchor, 16)
-        // Добавляем кнопку назад поверх игрового поля
+
         view.bringSubviewToFront(backButton)
     }
-    
+
     private func configureControlButtons() {
-        let spacing: CGFloat = 5 // Уменьшено расстояние между кнопками
-        let buttonMargin: CGFloat = 5 // Сдвинуто левее
-        
-        // Получаем размер изображения после масштабирования (увеличение в 10 раз: 2.0 * 5)
+        let spacing: CGFloat = 5
+        let buttonMargin: CGFloat = 5
+
         guard let arrowImage = UIImage(named: "arrow") else { return }
         let scaledImage = scaleImage(arrowImage, by: 10.0)
         let buttonSize = max(scaledImage.size.width, scaledImage.size.height)
-        
-        // Настраиваем кнопки со стрелками
-        // Базовая картинка показывает стрелку вниз
-        setupArrowButton(upButton, rotation: 0) // вверх (поворот на 180°)
-        setupArrowButton(downButton, rotation: .pi) // вниз (без поворота)
-        setupArrowButton(leftButton, rotation: -.pi / 2) // влево (поворот на -90°)
-        setupArrowButton(rightButton, rotation: .pi / 2) // вправо (поворот на 90°)
-        
-        // Добавляем на view с размером изображения
+
+        setupArrowButton(upButton, rotation: 0)
+        setupArrowButton(downButton, rotation: .pi)
+        setupArrowButton(leftButton, rotation: -.pi / 2)
+        setupArrowButton(rightButton, rotation: .pi / 2)
+
         [upButton, downButton, leftButton, rightButton].forEach {
             view.addSubview($0)
             $0.setWidth(buttonSize)
             $0.setHeight(buttonSize)
-            // Делаем contentMode fit, чтобы изображение не обрезалось
             $0.imageView?.contentMode = .scaleAspectFit
-            // Делаем кнопки более прозрачными
             $0.alpha = 0.2
         }
-        
-        // Располагаем кнопки в форме креста в правом нижнем углу
-        // Центральная позиция по горизонтали (отступ от правого края)
-        let centerOffset = buttonMargin + buttonSize / 2
-        
-        // Вниз (центральная кнопка внизу)
+
+        // Бомба
+        if let bombImage = UIImage(named: "bomb") ?? UIImage(systemName: "flame.fill") {
+            let scaledBomb = scaleImage(bombImage, by: 6.0)
+            bombButton.setImage(scaledBomb.withRenderingMode(.alwaysTemplate), for: .normal)
+            bombButton.tintColor = .white
+            bombButton.backgroundColor = .clear
+            bombButton.alpha = 0.25
+            view.addSubview(bombButton)
+            let s = max(scaledBomb.size.width, scaledBomb.size.height)
+            bombButton.setWidth(s)
+            bombButton.setHeight(s)
+        }
+
+        // Позиционирование
         downButton.pinRight(to: view.safeAreaLayoutGuide.trailingAnchor, buttonMargin + 50)
         downButton.pinBottom(to: view.safeAreaLayoutGuide.bottomAnchor, buttonMargin)
-        
-        // Вверх (над кнопкой вниз) - привязываем низ upButton к верху downButton
+
         upButton.pinRight(to: view.safeAreaLayoutGuide.trailingAnchor, buttonMargin + 50)
         upButton.pinBottom(to: downButton.topAnchor, -spacing)
-        
-        // Влево (слева от центральных кнопок)
+
         leftButton.pinRight(to: upButton.leadingAnchor, -spacing - 25)
         leftButton.pinCenterY(to: upButton.centerYAnchor, 35)
-        
-        // Вправо (справа от центральных кнопок)
+
         rightButton.pinLeft(to: upButton.trailingAnchor, spacing - 35)
         rightButton.pinCenterY(to: upButton.centerYAnchor, 35)
-        
-        // Подключаем обработчики
+
+        bombButton.pinRight(to: view.safeAreaLayoutGuide.trailingAnchor, buttonMargin + 50)
+        bombButton.pinTop(to: downButton.bottomAnchor, spacing)
+
+        // Обработчики: двигаем и сцену (для ощущения мгновенности), и интерактор
         upButton.addTarget(self, action: #selector(upButtonTapped), for: .touchUpInside)
         downButton.addTarget(self, action: #selector(downButtonTapped), for: .touchUpInside)
         leftButton.addTarget(self, action: #selector(leftButtonTapped), for: .touchUpInside)
         rightButton.addTarget(self, action: #selector(rightButtonTapped), for: .touchUpInside)
-        
-        // Добавляем кнопки поверх игрового поля
-        [upButton, downButton, leftButton, rightButton].forEach {
+        bombButton.addTarget(self, action: #selector(bombButtonTapped), for: .touchUpInside)
+
+        [upButton, downButton, leftButton, rightButton, bombButton].forEach {
             view.bringSubviewToFront($0)
         }
     }
-    
+
     private func setupArrowButton(_ button: UIButton, rotation: CGFloat) {
         guard let arrowImage = UIImage(named: "arrow") else { return }
-        
-        // Увеличиваем изображение в 10 раз (2.0 * 5)
-        let scale: CGFloat = 10.0
-        let scaledImage = scaleImage(arrowImage, by: scale)
-        
-        // Поворачиваем изображение стрелки
+        let scaledImage = scaleImage(arrowImage, by: 10.0)
         let rotatedImage = rotateImage(scaledImage, by: rotation)
         button.setImage(rotatedImage, for: .normal)
         button.tintColor = .white
-        // Убираем фон и рамку - только картинка
         button.backgroundColor = .clear
     }
-    
+
     private func rotateImage(_ image: UIImage, by radians: CGFloat) -> UIImage {
-        // Для поворотов на 90° или 270° меняем размеры местами
         let isQuarterTurn = abs(radians - .pi / 2) < 0.01 || abs(radians + .pi / 2) < 0.01
-        let rotatedSize = isQuarterTurn 
+        let rotatedSize = isQuarterTurn
             ? CGSize(width: image.size.height, height: image.size.width)
             : image.size
-        
+
         let renderer = UIGraphicsImageRenderer(size: rotatedSize)
-        
         return renderer.image { context in
-            let cgContext = context.cgContext
-            cgContext.translateBy(x: rotatedSize.width / 2, y: rotatedSize.height / 2)
-            cgContext.rotate(by: radians)
-            cgContext.translateBy(x: -image.size.width / 2, y: -image.size.height / 2)
-            
+            let cg = context.cgContext
+            cg.translateBy(x: rotatedSize.width / 2, y: rotatedSize.height / 2)
+            cg.rotate(by: radians)
+            cg.translateBy(x: -image.size.width / 2, y: -image.size.height / 2)
             if let cgImage = image.cgImage {
-                cgContext.draw(cgImage, in: CGRect(origin: .zero, size: image.size))
+                cg.draw(cgImage, in: CGRect(origin: .zero, size: image.size))
             }
         }.withRenderingMode(.alwaysTemplate)
     }
-    
-    @objc private func upButtonTapped() {
-        interactor.sendMove(dx: 0, dy: -1)
+
+    // MARK: - SpriteKit
+
+    private func configureSpriteKit() {
+        skView.ignoresSiblingOrder = true
+
+        let scene = GameScene()
+        scene.scaleMode = .resizeFill
+
+        gameScene = scene
+        skView.presentScene(scene)
     }
-    
-    @objc private func downButtonTapped() {
-        interactor.sendMove(dx: 0, dy: 1)
+
+    private func syncSceneLayoutIfPossible(with map: [[String]]) {
+        guard let scene = gameScene else { return }
+        guard !map.isEmpty else { return }
+
+        // Вычисления ОДИН В ОДИН как у тебя в renderMap
+        let rows = map.count
+        let cols = map[0].count
+
+        let availableWidth = gameMapView.bounds.width
+        let availableHeight = gameMapView.bounds.height
+        let calculatedTileWidth = availableWidth / CGFloat(cols)
+        let calculatedTileHeight = availableHeight / CGFloat(rows)
+        let finalTile = min(calculatedTileWidth, calculatedTileHeight)
+
+        let totalMapWidth = CGFloat(cols) * finalTile
+        let totalMapHeight = CGFloat(rows) * finalTile
+        let offsetX = (availableWidth - totalMapWidth) / 2
+        let offsetY = (availableHeight - totalMapHeight) / 2
+
+        scene.setGridLayout(
+            rows: rows,
+            cols: cols,
+            tileSize: CGSize(width: finalTile, height: finalTile),
+            originInViewCoords: CGPoint(x: offsetX, y: offsetY),
+            viewSize: gameMapView.bounds.size
+        )
     }
-    
-    @objc private func leftButtonTapped() {
-        interactor.sendMove(dx: -1, dy: 0)
-    }
-    
-    @objc private func rightButtonTapped() {
-        interactor.sendMove(dx: 1, dy: 0)
-    }
-    
-    
+
     private func configureCallbacks() {
         interactor.configureCallbacks()
     }
-    
+
+    // MARK: - Inputs
+
+    @objc private func upButtonTapped() {
+        gameScene?.move(dx: 0, dy: -1)
+        interactor.sendMove(dx: 0, dy: -1)
+    }
+
+    @objc private func downButtonTapped() {
+        gameScene?.move(dx: 0, dy: 1)
+        interactor.sendMove(dx: 0, dy: 1)
+    }
+
+    @objc private func leftButtonTapped() {
+        gameScene?.move(dx: -1, dy: 0)
+        interactor.sendMove(dx: -1, dy: 0)
+    }
+
+    @objc private func rightButtonTapped() {
+        gameScene?.move(dx: 1, dy: 0)
+        interactor.sendMove(dx: 1, dy: 0)
+    }
+
+    @objc private func bombButtonTapped() {
+        interactor.sendPlaceBomb()
+    }
+
+    // MARK: - State
+
+    func updateGameState(_ state: GameStateModel) {
+        gameState = state
+
+        // 1) UIKit карта
+        renderMap(state.map)
+
+        // 2) SpriteKit получает карту как "коллизии/проходимость"
+        gameScene?.updateCollisionMap(state.map)
+
+        // 2.1) Все игроки (мой + соперники)
+        gameScene?.syncPlayers(state.players, myId: GameWebSocketService.shared.currentPlayerId)
+
+        syncSceneLayoutIfPossible(with: state.map)
+
+        // Позиционирование основного игрока теперь делается в syncPlayers(_:myId:)
+
+        // бомбы и взрывы (надо реализовать в GameScene)
+        gameScene?.syncBombs(state.bombs)
+        gameScene?.syncExplosions(state.explosions)
+
+        print("Game state updated: \(state.state)")
+        if state.state == "GAME_OVER", !didShowGameOverOverlay {
+            didShowGameOverOverlay = true
+            let winnerName = state.winner ?? "Unknown"
+            showGameOverOverlay(winner: winnerName)
+        }
+    }
+
+    // MARK: - Your UIKit renderer (почти без изменений)
+
+    private func renderMap(_ map: [[String]]) {
+        // Ничего не чистим в gameMapView — иначе ты снесёшь SKView.
+        // Чистим ТОЛЬКО контейнер для тайлов.
+        mapTilesView.subviews.forEach { $0.removeFromSuperview() }
+
+        guard !map.isEmpty else { return }
+
+        let mapHeight = map.count
+        let mapWidth = map[0].count
+
+        let availableWidth = mapTilesView.bounds.width
+        let availableHeight = mapTilesView.bounds.height
+        let calculatedTileWidth = availableWidth / CGFloat(mapWidth)
+        let calculatedTileHeight = availableHeight / CGFloat(mapHeight)
+        let finalTileSize = min(calculatedTileWidth, calculatedTileHeight)
+
+        let totalMapWidth = CGFloat(mapWidth) * finalTileSize
+        let totalMapHeight = CGFloat(mapHeight) * finalTileSize
+        let offsetX = (availableWidth - totalMapWidth) / 2
+        let offsetY = (availableHeight - totalMapHeight) / 2
+
+        for y in 0..<mapHeight {
+            for x in 0..<mapWidth {
+                let tile = map[y][x]
+                if tile == "#" {
+                    renderWall(at: x, y: y, in: map, isDestroyable: false,
+                               offsetX: offsetX, offsetY: offsetY, tileSize: finalTileSize)
+                } else if tile == "." {
+                    renderWall(at: x, y: y, in: map, isDestroyable: true,
+                               offsetX: offsetX, offsetY: offsetY, tileSize: finalTileSize)
+                }
+            }
+        }
+    }
+
+    private func renderWall(at x: Int, y: Int, in map: [[String]],
+                            isDestroyable: Bool, offsetX: CGFloat, offsetY: CGFloat, tileSize: CGFloat) {
+        let isHorizontal = isHorizontalWall(at: x, y: y, in: map)
+        let imageName = isHorizontal ? "horizontal_wall" : "vertical_wall"
+        guard let wallImage = UIImage(named: imageName) else { return }
+
+        let imageView = UIImageView(image: wallImage)
+        imageView.contentMode = .scaleToFill
+        imageView.clipsToBounds = true
+        if isDestroyable { imageView.alpha = 0.5 }
+
+        imageView.frame = CGRect(
+            x: offsetX + CGFloat(x) * tileSize,
+            y: offsetY + CGFloat(y) * tileSize,
+            width: tileSize,
+            height: tileSize
+        )
+        mapTilesView.addSubview(imageView)
+    }
+
+    private func isHorizontalWall(at x: Int, y: Int, in map: [[String]]) -> Bool {
+        let mapHeight = map.count
+        let mapWidth = map[0].count
+
+        let hasLeftWall = x > 0 && map[y][x - 1] == "#"
+        let hasRightWall = x < mapWidth - 1 && map[y][x + 1] == "#"
+        let hasTopWall = y > 0 && map[y - 1][x] == "#"
+        let hasBottomWall = y < mapHeight - 1 && map[y + 1][x] == "#"
+
+        let horizontalNeighbors = (hasLeftWall ? 1 : 0) + (hasRightWall ? 1 : 0)
+        let verticalNeighbors = (hasTopWall ? 1 : 0) + (hasBottomWall ? 1 : 0)
+        return horizontalNeighbors >= verticalNeighbors
+    }
+
+    // MARK: - Utils
+
     private func scaleImage(_ image: UIImage, by scale: CGFloat) -> UIImage {
         let newSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
         let renderer = UIGraphicsImageRenderer(size: newSize)
@@ -218,93 +398,55 @@ final class GameZoneViewController: UIViewController {
             image.draw(in: CGRect(origin: .zero, size: newSize))
         }
     }
-    
-    func updateGameState(_ state: GameStateModel) {
-        gameState = state
-        renderMap(state.map)
-        print("Game state updated: \(state.state)")
-    }
-    
-    private func renderMap(_ map: [[String]]) {
-        // Удаляем все предыдущие view стен
-        gameMapView.subviews.forEach { $0.removeFromSuperview() }
-        
-        guard !map.isEmpty else { return }
-        
-        let mapHeight = map.count
-        let mapWidth = map[0].count
-        
-        // Вычисляем размер одной клетки на основе доступного пространства
-        let availableWidth = gameMapView.bounds.width
-        let availableHeight = gameMapView.bounds.height
-        let calculatedTileWidth = availableWidth / CGFloat(mapWidth)
-        let calculatedTileHeight = availableHeight / CGFloat(mapHeight)
-        let finalTileSize = min(calculatedTileWidth, calculatedTileHeight)
-        
-        // Центрируем карту на экране
-        let totalMapWidth = CGFloat(mapWidth) * finalTileSize
-        let totalMapHeight = CGFloat(mapHeight) * finalTileSize
-        let offsetX = (availableWidth - totalMapWidth) / 2
-        let offsetY = (availableHeight - totalMapHeight) / 2
-        
-        for y in 0..<mapHeight {
-            for x in 0..<mapWidth {
-                let tile = map[y][x]
-                
-                if tile == "#" {
-                    // Неразрушаемая стена
-                    renderWall(at: x, y: y, in: map, isDestroyable: false, offsetX: offsetX, offsetY: offsetY, tileSize: finalTileSize)
-                } else if tile == "." {
-                    // Разрушаемая стена (тусклая)
-                    renderWall(at: x, y: y, in: map, isDestroyable: true, offsetX: offsetX, offsetY: offsetY, tileSize: finalTileSize)
-                }
-            }
+
+    private func showGameOverOverlay(winner: String) {
+        // Create dimming overlay
+        let overlay = UIView()
+        overlay.backgroundColor = UIColor(white: 0, alpha: 0.65)
+        overlay.alpha = 0
+        overlay.isUserInteractionEnabled = true // block touches underneath
+        view.addSubview(overlay)
+        overlay.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            overlay.topAnchor.constraint(equalTo: view.topAnchor),
+            overlay.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            overlay.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            overlay.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
+        self.overlayView = overlay
+
+        // Winner label
+        let label = UILabel()
+        label.textColor = .white
+        label.font = Fonts.pixelHeading
+        label.textAlignment = .center
+        label.numberOfLines = 2
+        label.text = "Winner: \(winner)"
+        overlay.addSubview(label)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            label.centerXAnchor.constraint(equalTo: overlay.centerXAnchor),
+            label.centerYAnchor.constraint(equalTo: overlay.centerYAnchor),
+            label.leadingAnchor.constraint(greaterThanOrEqualTo: overlay.leadingAnchor, constant: 16),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: overlay.trailingAnchor, constant: -16)
+        ])
+
+        // Animate in
+        UIView.animate(withDuration: 0.25) {
+            overlay.alpha = 1
         }
-    }
-    
-    private func renderWall(at x: Int, y: Int, in map: [[String]], isDestroyable: Bool, offsetX: CGFloat, offsetY: CGFloat, tileSize: CGFloat) {
-        // Определяем, горизонтальная или вертикальная стена
-        let isHorizontal = isHorizontalWall(at: x, y: y, in: map)
-        let imageName = isHorizontal ? "horizontal_wall" : "vertical_wall"
-        
-        guard let wallImage = UIImage(named: imageName) else { return }
-        
-        let imageView = UIImageView(image: wallImage)
-        imageView.contentMode = .scaleToFill
-        imageView.clipsToBounds = true
-        
-        // Если стена разрушаемая, делаем её тусклее (применяем альфа-канал)
-        if isDestroyable {
-            imageView.alpha = 0.5 // Делаем тусклее с помощью прозрачности
+
+        // Dismiss after 3 seconds and return to lobby
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
+            guard let self = self else { return }
+            UIView.animate(withDuration: 0.2, animations: {
+                overlay.alpha = 0
+            }, completion: { _ in
+                overlay.removeFromSuperview()
+                self.overlayView = nil
+                // Return to LobbyViewController
+                self.navigationController?.popViewController(animated: true)
+            })
         }
-        
-        imageView.frame = CGRect(
-            x: offsetX + CGFloat(x) * tileSize,
-            y: offsetY + CGFloat(y) * tileSize,
-            width: tileSize,
-            height: tileSize
-        )
-        gameMapView.addSubview(imageView)
-    }
-    
-    private func isHorizontalWall(at x: Int, y: Int, in map: [[String]]) -> Bool {
-        let mapHeight = map.count
-        let mapWidth = map[0].count
-        
-        // Проверяем соседние клетки
-        let hasLeftWall = x > 0 && map[y][x - 1] == "#"
-        let hasRightWall = x < mapWidth - 1 && map[y][x + 1] == "#"
-        let hasTopWall = y > 0 && map[y - 1][x] == "#"
-        let hasBottomWall = y < mapHeight - 1 && map[y + 1][x] == "#"
-        
-        // Если стена имеет соседей слева/справа, это горизонтальная стена
-        // Если стена имеет соседей сверху/снизу, это вертикальная стена
-        // Если имеет соседей в обоих направлениях, проверяем преобладающее направление
-        let horizontalNeighbors = (hasLeftWall ? 1 : 0) + (hasRightWall ? 1 : 0)
-        let verticalNeighbors = (hasTopWall ? 1 : 0) + (hasBottomWall ? 1 : 0)
-        
-        // Если горизонтальных соседей больше или равно, считаем горизонтальной
-        return horizontalNeighbors >= verticalNeighbors
     }
 }
-
