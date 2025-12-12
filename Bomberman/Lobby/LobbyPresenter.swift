@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import UIKit
 
 final class LobbyPresenter: LobbyPresentationLogic {
     var view: LobbyViewController?
@@ -14,8 +15,12 @@ final class LobbyPresenter: LobbyPresentationLogic {
         view?.players = players
     }
     
-    func startGame(with: GameStateModel) {
-        // TODO: тут переход на экран игры.
-        print("Game started")
+    func startGame(with gameState: GameStateModel) {
+        routeToGameZone()
+    }
+    
+    func routeToGameZone() {
+        let gameZoneVC = GameZoneAssembly.build()
+        view?.navigationController?.pushViewController(gameZoneVC, animated: true)
     }
 }
