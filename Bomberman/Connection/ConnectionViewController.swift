@@ -26,6 +26,10 @@ final class ConnectionViewController: UIViewController {
     }
     
     override func viewDidLoad() {
+        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(dismissKeyboard))
+            tapGesture.cancelsTouchesInView = false
+            view.addGestureRecognizer(tapGesture)
+        
         super.viewDidLoad()
         view.backgroundColor = Colors.background
         
@@ -122,5 +126,9 @@ final class ConnectionViewController: UIViewController {
         let alert = UIAlertController(title: "Error", message: text, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "OK", style: .default))
         present(alert, animated: true)
+    }
+    
+    @objc private func dismissKeyboard() {
+        view.endEditing(true)
     }
 }
