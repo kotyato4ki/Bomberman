@@ -29,6 +29,17 @@ final class GameZoneViewController: UIViewController {
     private var didShowGameOverOverlay = false
     private var overlayView: UIView?
 
+    // Таймер раунда (правый верхний угол)
+    private let timerLabel: UILabel = {
+        let label = UILabel()
+        label.textColor = .white
+        label.font = Fonts.pixel27
+        label.textAlignment = .right
+        label.numberOfLines = 1
+        label.isHidden = true
+        return label
+    }()
+
     // Чтобы реже пересобирать карту
     private var lastRenderedMapSignature: Int?
 
@@ -78,6 +89,7 @@ final class GameZoneViewController: UIViewController {
         configureGameMapView()
         configureBackButton()
         configureControlButtons()
+        configureTimerLabel()
     }
 
     private func configureGameMapView() {
@@ -189,6 +201,16 @@ final class GameZoneViewController: UIViewController {
         [upButton, downButton, leftButton, rightButton, bombButton].forEach {
             view.bringSubviewToFront($0)
         }
+    }
+
+    private func configureTimerLabel() {
+        gameMapView.addSubview(timerLabel)
+        timerLabel.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            timerLabel.topAnchor.constraint(equalTo: gameMapView.topAnchor, constant: 0),
+            timerLabel.trailingAnchor.constraint(equalTo: gameMapView.trailingAnchor, constant: -90)
+        ])
+        view.bringSubviewToFront(timerLabel)
     }
 
     private func setupArrowButton(_ button: UIButton, rotation: CGFloat) {
@@ -309,6 +331,17 @@ final class GameZoneViewController: UIViewController {
         // бомбы и взрывы (надо реализовать в GameScene)
         gameScene?.syncBombs(state.bombs)
         gameScene?.syncExplosions(state.explosions)
+
+        // Таймер из сервера
+        if state.state == "IN_PROGRESS", let time = state.timeRemaining {
+            let clamped = max(0, time)
+            let minutes = Int(clamped) / 60
+            let seconds = Int(clamped) % 60
+            timerLabel.text = String(format: "%02d:%02d", minutes, seconds)
+            timerLabel.isHidden = false
+        } else {
+            timerLabel.isHidden = true
+        }
 
         print("Game state updated: \(state.state)")
         if state.state == "GAME_OVER", !didShowGameOverOverlay {
