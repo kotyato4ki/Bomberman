@@ -163,16 +163,25 @@ final class GameZoneViewController: UIViewController {
         }
 
         // Бомба
-        if let bombImage = UIImage(named: "bomb") ?? UIImage(systemName: "flame.fill") {
-            let scaledBomb = scaleImage(bombImage, by: 6.0)
-            bombButton.setImage(scaledBomb.withRenderingMode(.alwaysTemplate), for: .normal)
-            bombButton.tintColor = .white
-            bombButton.backgroundColor = .clear
-            bombButton.alpha = 0.25
+        if (UIImage(named: "bomb") ?? UIImage(systemName: "flame.fill")) != nil {
             view.addSubview(bombButton)
-            let s = max(scaledBomb.size.width, scaledBomb.size.height)
-            bombButton.setWidth(s)
-            bombButton.setHeight(s)
+            bombButton.backgroundColor = .clear
+            bombButton.alpha = 0.25 // на время дебага, потом вернёшь 0.25
+
+            if let bombImage = UIImage(named: "bomb") ?? UIImage(systemName: "flame.fill") {
+                let scaledBomb = scaleImage(bombImage, by: 3.0)
+                bombButton.setImage(scaledBomb.withRenderingMode(.alwaysTemplate), for: .normal)
+                bombButton.tintColor = .white
+                let s = max(scaledBomb.size.width, scaledBomb.size.height)
+                bombButton.setWidth(s)
+                bombButton.setHeight(s)
+            } else {
+                // дебаг-заглушка
+                bombButton.setTitle("B", for: .normal)
+                bombButton.setTitleColor(.red, for: .normal)
+                bombButton.setWidth(60)
+                bombButton.setHeight(60)
+            }
         }
 
         // Позиционирование
@@ -188,8 +197,11 @@ final class GameZoneViewController: UIViewController {
         rightButton.pinLeft(to: upButton.trailingAnchor, spacing - 35)
         rightButton.pinCenterY(to: upButton.centerYAnchor, 35)
 
-        bombButton.pinRight(to: view.safeAreaLayoutGuide.trailingAnchor, buttonMargin + 50)
-        bombButton.pinTop(to: downButton.bottomAnchor, spacing)
+        bombButton.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            bombButton.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 20),
+            bombButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -30)
+        ])
 
         // Обработчики: двигаем и сцену (для ощущения мгновенности), и интерактор
         upButton.addTarget(self, action: #selector(upButtonTapped), for: .touchUpInside)
