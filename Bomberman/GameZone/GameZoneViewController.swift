@@ -65,6 +65,7 @@ final class GameZoneViewController: UIViewController {
         configureUI()
         configureSpriteKit()
         configureCallbacks()
+        setupAutoExplosionTimer()
     }
 
     override func viewDidLayoutSubviews() {
@@ -325,6 +326,8 @@ final class GameZoneViewController: UIViewController {
     // MARK: - State
 
     func updateGameState(_ state: GameStateModel) {
+        let isFirstUpdate = gameState == nil
+        
         gameState = state
 
         // 1) UIKit карта
