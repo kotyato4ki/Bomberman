@@ -28,6 +28,9 @@ final class GameZoneViewController: UIViewController {
 
     private var didShowGameOverOverlay = false
     private var overlayView: UIView?
+    
+    private var lastMapTilesBounds: CGRect = .zero
+    private var needsMapRerenderAfterLayout = false
 
     // Таймер раунда (правый верхний угол)
     private let timerLabel: UILabel = {
@@ -42,6 +45,9 @@ final class GameZoneViewController: UIViewController {
 
     // Чтобы реже пересобирать карту
     private var lastRenderedMapSignature: Int?
+    
+    private lazy var horizontalWallImage = UIImage(named: "horizontal_wall")
+    private lazy var verticalWallImage = UIImage(named: "vertical_wall")
 
     init(interactor: GameZoneInteractionLogic) {
         self.interactor = interactor
@@ -65,16 +71,26 @@ final class GameZoneViewController: UIViewController {
         configureUI()
         configureSpriteKit()
         configureCallbacks()
-        setupAutoExplosionTimer()
     }
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
 
-        // 1) перерисовать UIKit карту при изменении размеров
+        // если размеров ещё нет — нечего рисовать
+        guard mapTilesView.bounds.width > 0, mapTilesView.bounds.height > 0 else { return }
+
+        // если bounds не поменялись и мы не просили перерендер — выходим
+        let boundsChanged = (mapTilesView.bounds != lastMapTilesBounds)
+        guard boundsChanged || needsMapRerenderAfterLayout else { return }
+
+        lastMapTilesBounds = mapTilesView.bounds
+        needsMapRerenderAfterLayout = false
+
         if let state = gameState {
-            renderMap(state.map)
+            // layout сначала
             syncSceneLayoutIfPossible(with: state.map)
+            // потом карта (старая стабильная)
+            renderMap(state.map)
         }
     }
 
@@ -260,7 +276,9 @@ final class GameZoneViewController: UIViewController {
 
         let scene = GameScene()
         scene.scaleMode = .resizeFill
-
+        let selectedId = GameWebSocketService.shared.selectedCharacterId
+        print("GameScene character id:", selectedId)
+        scene.setCharacter(id: selectedId)
         gameScene = scene
         skView.presentScene(scene)
     }
@@ -268,13 +286,15 @@ final class GameZoneViewController: UIViewController {
     private func syncSceneLayoutIfPossible(with map: [[String]]) {
         guard let scene = gameScene else { return }
         guard !map.isEmpty else { return }
+        guard mapTilesView.bounds.width > 0, mapTilesView.bounds.height > 0 else { return }
 
-        // Вычисления ОДИН В ОДИН как у тебя в renderMap
+        // 1-в-1 с renderMap: считаем от mapTilesView
         let rows = map.count
         let cols = map[0].count
 
-        let availableWidth = gameMapView.bounds.width
-        let availableHeight = gameMapView.bounds.height
+        let availableWidth = mapTilesView.bounds.width
+        let availableHeight = mapTilesView.bounds.height
+
         let calculatedTileWidth = availableWidth / CGFloat(cols)
         let calculatedTileHeight = availableHeight / CGFloat(rows)
         let finalTile = min(calculatedTileWidth, calculatedTileHeight)
@@ -289,7 +309,7 @@ final class GameZoneViewController: UIViewController {
             cols: cols,
             tileSize: CGSize(width: finalTile, height: finalTile),
             originInViewCoords: CGPoint(x: offsetX, y: offsetY),
-            viewSize: gameMapView.bounds.size
+            viewSize: skView.bounds.size
         )
     }
 
@@ -326,28 +346,33 @@ final class GameZoneViewController: UIViewController {
     // MARK: - State
 
     func updateGameState(_ state: GameStateModel) {
-        let isFirstUpdate = gameState == nil
-        
         gameState = state
 
-        // 1) UIKit карта
-        renderMap(state.map)
-
-        // 2) SpriteKit получает карту как "коллизии/проходимость"
-        gameScene?.updateCollisionMap(state.map)
-
-        // 2.1) Все игроки (мой + соперники)
-        gameScene?.syncPlayers(state.players, myId: GameWebSocketService.shared.currentPlayerId)
-
+        // 1) layout
         syncSceneLayoutIfPossible(with: state.map)
 
-        // Позиционирование основного игрока теперь делается в syncPlayers(_:myId:)
+        // 2) UIKit карта
+        if mapTilesView.bounds.width > 0, mapTilesView.bounds.height > 0 {
+            renderMap(state.map)
 
-        // бомбы и взрывы (надо реализовать в GameScene)
+            // ✅ важно: чтобы viewDidLayoutSubviews не делал "второй лишний рендер"
+            lastMapTilesBounds = mapTilesView.bounds
+            needsMapRerenderAfterLayout = false
+        } else {
+            needsMapRerenderAfterLayout = true
+        }
+
+        // 3) collision
+        gameScene?.updateCollisionMap(state.map)
+
+        // 4) игроки
+        gameScene?.syncPlayers(state.players, myId: GameWebSocketService.shared.currentPlayerId)
+
+        // 5) бомбы/взрывы
         gameScene?.syncBombs(state.bombs)
         gameScene?.syncExplosions(state.explosions)
 
-        // Таймер из сервера
+        // 6) таймер
         if state.state == "IN_PROGRESS", let time = state.timeRemaining {
             let clamped = max(0, time)
             let minutes = Int(clamped) / 60
@@ -358,11 +383,9 @@ final class GameZoneViewController: UIViewController {
             timerLabel.isHidden = true
         }
 
-        print("Game state updated: \(state.state)")
         if state.state == "GAME_OVER", !didShowGameOverOverlay {
             didShowGameOverOverlay = true
-            let winnerName = state.winner ?? "Unknown"
-            showGameOverOverlay(winner: winnerName)
+            showGameOverOverlay(winner: state.winner ?? "Unknown")
         }
     }
 
@@ -406,8 +429,8 @@ final class GameZoneViewController: UIViewController {
     private func renderWall(at x: Int, y: Int, in map: [[String]],
                             isDestroyable: Bool, offsetX: CGFloat, offsetY: CGFloat, tileSize: CGFloat) {
         let isHorizontal = isHorizontalWall(at: x, y: y, in: map)
-        let imageName = isHorizontal ? "horizontal_wall" : "vertical_wall"
-        guard let wallImage = UIImage(named: imageName) else { return }
+        let wallImage = isHorizontal ? horizontalWallImage : verticalWallImage
+        guard let wallImage else { return }
 
         let imageView = UIImageView(image: wallImage)
         imageView.contentMode = .scaleToFill

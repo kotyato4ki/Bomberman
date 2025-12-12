@@ -3,6 +3,18 @@ import UIKit
 
 public final class GameScene: SKScene {
 
+    // MARK: - Character selection (private property)
+    private var currentCharacterId: Int = 2 // текущий выбранный персонаж (по умолчанию 2 - priest)
+    
+    private var currentCharacterName: String { // computed property для имени персонажа
+        switch currentCharacterId {
+        case 1: return "vampire"
+        case 2: return "priest"
+        case 3: return "skeleton"
+        default: return "priest"
+        }
+    }
+    
     // VC сюда подкидывает карту для проверки проходимости/разрушения
     private var collisionMap: [[String]] = []
 
@@ -29,10 +41,25 @@ public final class GameScene: SKScene {
     // Бомба и взрыв
     private var bombNodes: [String: SKSpriteNode] = [:]
     private var animatedExplosions = Set<String>()  // чтобы не переигрывать одно и то же
-
+    
+    // MARK: - Public API for character setting
+    public func setCharacter(id: Int) { // публичный метод для обновления персонажа из VC
+        currentCharacterId = id
+        // при обновлении персонажа обновляем спрайты, если они уже созданы
+        if hasPlayer {
+            player.texture = SKTexture(imageNamed: "\(currentCharacterName)_v1_1") // смена текстуры игрока
+            runIdleAnimation() // запуск анимации с новым персонажем
+        }
+        for (_, node) in otherPlayerNodes {
+            node.texture = SKTexture(imageNamed: "\(currentCharacterName)_v1_1") // смена текстуры соперников
+            runIdleAnimation(on: node)
+        }
+    }
+    
     public override func didMove(to view: SKView) {
         backgroundColor = .clear
         setupPlayerIfNeeded()
+        runIdleAnimation() // анимация после setup
     }
 
     public override func didChangeSize(_ oldSize: CGSize) {
@@ -55,21 +82,33 @@ public final class GameScene: SKScene {
         self.viewSize = viewSize
 
         setupPlayerIfNeeded()
-        syncPlayerPosition(animated: false)
-    }
-
-     func updateCollisionMap(_ map: [[String]]) {
-        collisionMap = map
-        if !hasPlayer {
-            playerGrid = findFirstWalkable(in: map)
-            hasPlayer = true
-        } else if !isWalkable(x: Int(playerGrid.x), y: Int(playerGrid.y)) {
-            playerGrid = findFirstWalkable(in: map)
+        if player.action(forKey: "idle") == nil {
+            runIdleAnimation()
         }
         syncPlayerPosition(animated: false)
     }
 
+    func updateCollisionMap(_ map: [[String]]) {
+        collisionMap = map
+
+        // Пока сетка не настроена — позиционировать нечего.
+        guard tileSize != .zero, viewSize != .zero else { return }
+
+        // Позицию задаёт syncPlayers, тут только "перерисовать" по текущей.
+        syncPlayerPosition(animated: false)
+    }
+
     func setPlayerGridPosition(x: Int, y: Int) {
+        // если карта ещё не пришла — просто принимаем
+        if collisionMap.isEmpty {
+            playerGrid = CGPoint(x: x, y: y)
+            syncPlayerPosition(animated: false)
+            return
+        }
+
+        // если сервер прислал фигню — игнорим
+        guard isWalkable(x: x, y: y) else { return }
+
         playerGrid = CGPoint(x: x, y: y)
         syncPlayerPosition(animated: false)
     }
@@ -224,17 +263,29 @@ public final class GameScene: SKScene {
     func syncPlayers(_ players: [PlayerModel], myId: String?) {
         guard tileSize != .zero else { return }
 
+        // 0) На всякий случай: если игрок ещё не создан (вдруг порядок вызовов кривой)
+        setupPlayerIfNeeded()
+
         // 1) Мой игрок (если id известен) — обновляем основного `player`
         if let myId, let me = players.first(where: { $0.id == myId }) {
             setPlayerGridPosition(x: me.x, y: me.y)
             player.isHidden = !me.alive
             setName(me.name, for: player)
             updateNameLabelLayout(for: player)
+
+            if player.action(forKey: "idle") == nil {
+                runIdleAnimation()
+            }
+
         } else if let first = players.first { // fallback: первый в списке
             setPlayerGridPosition(x: first.x, y: first.y)
             player.isHidden = !first.alive
             setName(first.name, for: player)
             updateNameLabelLayout(for: player)
+
+            if player.action(forKey: "idle") == nil {
+                runIdleAnimation()
+            }
         }
 
         // 2) Остальные игроки — отдельные спрайты
@@ -257,13 +308,12 @@ public final class GameScene: SKScene {
             node.zPosition = 45
             node.isHidden = !p.alive
 
-            // Запустить анимацию, если не запущена
             if node.action(forKey: "idle") == nil {
                 runIdleAnimation(on: node)
             }
         }
 
-        // 3) Удалить те, кого больше нет
+        // 3) Удалить тех, кого больше нет
         for (id, node) in otherPlayerNodes where !stillPresent.contains(id) {
             node.removeFromParent()
             otherPlayerNodes.removeValue(forKey: id)
@@ -304,7 +354,8 @@ public final class GameScene: SKScene {
     private func setupPlayerIfNeeded() {
         guard !hasPlayer else { return }
 
-        player = SKSpriteNode(imageNamed: "priest2_v1_1")
+        // Изменено: используем currentCharacterName для выбора имени файла текстуры // 
+        player = SKSpriteNode(imageNamed: "\(currentCharacterName)_v1_1") 
         player.zPosition = 50
         player.size = tileSize == .zero ? CGSize(width: 32, height: 32) : tileSize
         addChild(player)
@@ -314,11 +365,12 @@ public final class GameScene: SKScene {
         updateNameLabelLayout(for: player)
 
         hasPlayer = true
-        runIdleAnimation()
+        runIdleAnimation() // анимация после setup
     }
 
     private func makeOtherPlayerNode() -> SKSpriteNode {
-        let n = SKSpriteNode(imageNamed: "priest2_v1_1")
+        // Изменено: используем currentCharacterName для выбора имени файла текстуры //
+        let n = SKSpriteNode(imageNamed: "\(currentCharacterName)_v1_1")
         n.color = .orange
         n.colorBlendFactor = 0.45 // легкий оттенок, чтобы отличать соперников
         n.zPosition = 45
@@ -334,19 +386,32 @@ public final class GameScene: SKScene {
     }
 
     private func runIdleAnimation(on node: SKSpriteNode) {
+        // не убивай анимацию просто так — убивай только если реально хочешь перезапустить
+        node.removeAction(forKey: "idle")
+
         var frames: [SKTexture] = []
-        let base = "priest2_v1_"
+        let base = "\(currentCharacterName)_v1_"
+
         for i in 1...4 {
-            let tex = SKTexture(imageNamed: "\(base)\(i)")
-            if tex.size() != .zero { frames.append(tex) }
+            let name = "\(base)\(i)"
+            let tex = SKTexture(imageNamed: name)
+
+            if tex.size() == .zero {
+                print("❌ Missing texture:", name)
+            } else {
+                frames.append(tex)
+            }
         }
-        guard !frames.isEmpty else { return }
+
+        print("✅ Idle frames for \(currentCharacterName):", frames.count,
+              "node:", node === player ? "PLAYER" : "OTHER")
+
+        guard frames.count >= 2 else { return }
 
         let forward = SKAction.animate(with: frames, timePerFrame: 0.12)
         let reverse = SKAction.animate(with: Array(frames.dropFirst().dropLast().reversed()), timePerFrame: 0.20)
         node.run(.repeatForever(.sequence([forward, reverse])), withKey: "idle")
     }
-
     // MARK: - Positioning (важно: совпадение с UIKit)
 
     private func syncPlayerPosition(animated: Bool) {
@@ -419,4 +484,3 @@ public final class GameScene: SKScene {
         onMapChanged?(collisionMap)
     }
 }
-
