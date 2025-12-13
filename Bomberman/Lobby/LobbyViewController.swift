@@ -66,7 +66,20 @@ final class LobbyViewController: UIViewController {
     
     @objc
     private func backButtonTapped() {
-        navigationController?.popViewController(animated: true)
+        // 1) выходим с сервера
+        interactor.leaveLobby()
+
+        // 2) прыгаем на Connection (пропуская CharacterSelection)
+        guard let nav = navigationController else {
+            dismiss(animated: true)
+            return
+        }
+
+        if let connectionVC = nav.viewControllers.first(where: { $0 is ConnectionViewController }) {
+            nav.popToViewController(connectionVC, animated: true)
+        } else {
+            nav.popToRootViewController(animated: true)
+        }
     }
     
     private func configureUI() {
