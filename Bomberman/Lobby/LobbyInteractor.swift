@@ -48,6 +48,6 @@ final class LobbyInteractor: LobbyInteractionLogic {
     func sendReady() {
         service.sendReady()
         // Для теста: сразу переходим на GameZone
-        presenter.routeToGameZone()
+        //presenter.routeToGameZone()
     }
 }
