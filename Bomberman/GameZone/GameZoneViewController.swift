@@ -93,6 +93,16 @@ final class GameZoneViewController: UIViewController {
             renderMap(state.map)
         }
     }
+    
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        interactor.configureCallbacks()
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        interactor.updateGameStateDeinit() // sets onGameState = nil
+    }
 
     deinit { interactor.updateGameStateDeinit() }
 

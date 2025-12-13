@@ -52,13 +52,34 @@ final class LobbyViewController: UIViewController {
         configureUI()
     }
     
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        interactor.configureCallbacks()
+
+        // Optional: avoid showing stale "ready" while waiting for first fresh tick
+        players = []
+    }
+    
     deinit {
         interactor.updateGameStateDeinit()
     }
     
     @objc
     private func backButtonTapped() {
-        navigationController?.popViewController(animated: true)
+        // 1) выходим с сервера
+        interactor.leaveLobby()
+
+        // 2) прыгаем на Connection (пропуская CharacterSelection)
+        guard let nav = navigationController else {
+            dismiss(animated: true)
+            return
+        }
+
+        if let connectionVC = nav.viewControllers.first(where: { $0 is ConnectionViewController }) {
+            nav.popToViewController(connectionVC, animated: true)
+        } else {
+            nav.popToRootViewController(animated: true)
+        }
     }
     
     private func configureUI() {

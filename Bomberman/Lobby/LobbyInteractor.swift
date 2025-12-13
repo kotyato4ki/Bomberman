@@ -67,4 +67,9 @@ final class LobbyInteractor: LobbyInteractionLogic {
         // Если игра еще не началась, отправляем готовность
         service.sendReady()
     }
+    
+    func leaveLobby() {
+        let service = GameWebSocketService.shared
+        service.disconnect()
+    }
 }

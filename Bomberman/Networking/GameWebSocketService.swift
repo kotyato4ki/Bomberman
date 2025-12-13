@@ -45,10 +45,20 @@ final class GameWebSocketService: NSObject {
     }
     
     func disconnect() {
+        // 1) сначала убираем колбэки, чтобы UI не получал мусор при уходе
+        onGameState = nil
+        onAssignPlayerId = nil
+
+        // 2) сбрасываем локальные данные сессии
+        currentPlayerId = nil
+        isConnected = false
+
+        // 3) закрываем сокет
         let reason = "Client closed connection".data(using: .utf8)
         webSocketTask?.cancel(with: .goingAway, reason: reason)
         webSocketTask = nil
-        isConnected = false
+
+        // 4) уведомляем
         onDisconnected?(nil)
     }
     

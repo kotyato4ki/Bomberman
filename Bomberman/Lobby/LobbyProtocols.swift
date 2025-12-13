@@ -12,6 +12,7 @@ protocol LobbyInteractionLogic {
     func configureCallbacks()
     func getMyPlayerId(completion: @escaping (String?) -> Void)
     func sendReady()
+    func leaveLobby()
 }
 
 protocol LobbyPresentationLogic {
