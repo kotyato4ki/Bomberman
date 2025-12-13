@@ -162,14 +162,20 @@ public final class GameScene: SKScene {
             alive.insert(key)
 
             let node = bombNodes[key] ?? {
-                let n = SKSpriteNode(imageNamed: "bomb")
-                n.size = CGSize(width: tileSize.width * 0.8, height: tileSize.height * 0.8)
+                let n = SKSpriteNode(texture: SKTexture(imageNamed: "exp1"))
+                n.size = tileSize
                 n.zPosition = 20
                 addChild(n)
                 bombNodes[key] = n
+
+                startBombBlink(on: n)
                 return n
             }()
-
+            
+            node.texture = SKTexture(imageNamed: "exp1")
+            startBombBlink(on: node)
+            
+            node.size = tileSize
             node.position = pointForCell(x: b.x, y: b.y)
             node.isHidden = false
             node.alpha = 1
@@ -321,30 +327,31 @@ public final class GameScene: SKScene {
     }
     
     private func runExplosion(atCellX x: Int, y: Int) {
-        let boom = SKSpriteNode(imageNamed: "explosion")
+        let boom = SKSpriteNode(texture: explosionFrames.first)
         boom.position = pointForCell(x: x, y: y)
         boom.size = tileSize
         boom.zPosition = 30
         addChild(boom)
 
-        let scale = SKAction.scale(to: 1.6, duration: 0.12)
-        let fade = SKAction.fadeOut(withDuration: 0.18)
-        let group = SKAction.group([scale, fade])
-        boom.run(.sequence([group, .removeFromParent()]))
+        let anim = SKAction.animate(with: explosionFrames,
+                                    timePerFrame: 0.06,
+                                    resize: false,
+                                    restore: false)
+        boom.run(.sequence([anim, .removeFromParent()]))
     }
 
     private func runExplosion(at position: CGPoint) {
-        // Самый простой вариант: один спрайт + масштаб + исчезновение
-        let boom = SKSpriteNode(imageNamed: "explosion")
+        let boom = SKSpriteNode(texture: explosionFrames.first)
         boom.position = position
         boom.size = tileSize
         boom.zPosition = 30
         addChild(boom)
 
-        let scale = SKAction.scale(to: 1.6, duration: 0.12)
-        let fade = SKAction.fadeOut(withDuration: 0.18)
-        let group = SKAction.group([scale, fade])
-        boom.run(.sequence([group, .removeFromParent()]))
+        let anim = SKAction.animate(with: explosionFrames,
+                                    timePerFrame: 0.06,
+                                    resize: false,
+                                    restore: false)
+        boom.run(.sequence([anim, .removeFromParent()]))
     }
 
     // MARK: - Player setup / animation
@@ -482,5 +489,22 @@ public final class GameScene: SKScene {
         clearIfDestroyable(x + 1, y)
 
         onMapChanged?(collisionMap)
+    }
+    
+    // Frames for explosion animation: exp1 ... exp8 (from Assets/explosion)
+    private lazy var explosionFrames: [SKTexture] = {
+        (1...8).map { SKTexture(imageNamed: "exp\($0)") }
+    }()
+
+    private func startBombBlink(on node: SKSpriteNode) {
+        node.removeAction(forKey: "bombBlink")
+        node.alpha = 1
+
+        let hide = SKAction.fadeOut(withDuration: 0.12)
+        let show = SKAction.fadeIn(withDuration: 0.12)
+        let wait = SKAction.wait(forDuration: 0.10)
+        let seq = SKAction.sequence([hide, wait, show, wait])
+
+        node.run(.repeatForever(seq), withKey: "bombBlink")
     }
 }
