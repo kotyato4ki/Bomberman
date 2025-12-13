@@ -98,6 +98,27 @@ final class GameWebSocketService: NSObject {
         }
     }
     
+    private func send(_ dictionary: [String: String]) {
+        guard let task = webSocketTask else {
+            print("WebSocket not connected")
+            return
+        }
+        do {
+            let data = try JSONSerialization.data(withJSONObject: dictionary, options: [])
+            if let text = String(data: data, encoding: .utf8) {
+                let message = URLSessionWebSocketTask.Message.string(text)
+                task.send(message) { [weak self] error in
+                    if let error = error {
+                        print("Failed to send message: \(error)")
+                        self?.handleDisconnect(error: error)
+                    }
+                }
+            }
+        } catch {
+            print("Encoding error: \(error)")
+        }
+    }
+    
     private func listen() {
         webSocketTask?.receive { [weak self] result in
             guard let self = self else { return }
@@ -171,15 +192,17 @@ final class GameWebSocketService: NSObject {
     }
 
     func sendCharacterSelection(_ characterName: String) {
-        let message = [
-            "type": "select_character",
-            "character_name": characterName
+        let message: [String: String] = [
+            "type": "set_character",
+            "characterName": characterName
         ]
-        
-        // Заглушка — просто печатаем
-        print("Sending character selection: \(characterName)")
-        
-        // Раскомментируй, когда будет реальный веб-сокет
-        // send(message)
+        send(message)
+    }
+    
+    private let selectedCharacterKey = "selectedCharacterId"
+    
+    var selectedCharacterId: Int {
+        get { UserDefaults.standard.integer(forKey: selectedCharacterKey) == 0 ? 2 : UserDefaults.standard.integer(forKey: selectedCharacterKey) }
+        set { UserDefaults.standard.set(newValue, forKey: selectedCharacterKey) }
     }
 }

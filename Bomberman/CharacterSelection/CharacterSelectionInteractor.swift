@@ -25,7 +25,13 @@ final class CharacterSelectionInteractor: CharacterSelectionInteractionLogic {
     }
     
     func selectCharacter(_ character: CharacterModel) {
-        service.sendCharacterSelection(character.name)
+        guard let selectedId = Int(character.name) else {
+            service.selectedCharacterId = 2
+            presenter.presentSelectedCharacter(CharacterModel(name: "2", previewImageName: "character2"))
+            return
+        }
+
+        service.selectedCharacterId = selectedId
         presenter.presentSelectedCharacter(character)
     }
 }
