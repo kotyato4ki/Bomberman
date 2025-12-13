@@ -52,6 +52,14 @@ final class LobbyViewController: UIViewController {
         configureUI()
     }
     
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        interactor.configureCallbacks()
+
+        // Optional: avoid showing stale "ready" while waiting for first fresh tick
+        players = []
+    }
+    
     deinit {
         interactor.updateGameStateDeinit()
     }
