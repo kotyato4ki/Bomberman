@@ -11,6 +11,9 @@ final class LobbyInteractor: LobbyInteractionLogic {
     private let presenter: LobbyPresentationLogic
     private let service = GameWebSocketService.shared
     
+    // Добавляем флаг для отслеживания текущего статуса
+    private var currentGameState: String = "WAITING"
+    
     init(presenter: LobbyPresentationLogic) {
         self.presenter = presenter
     }
@@ -24,6 +27,9 @@ final class LobbyInteractor: LobbyInteractionLogic {
             DispatchQueue.main.async {
                 guard let self = self else { return }
                 
+                // Сохраняем текущий статус игры
+                self.currentGameState = state.state
+                
                 switch state.state {
                 case "WAITING":
                     self.presenter.updatePlayers(state.players)
@@ -33,6 +39,8 @@ final class LobbyInteractor: LobbyInteractionLogic {
                     
                 case "GAME_OVER":
                     print("GAME_OVER, winner: \(state.winner ?? "nil")")
+                    // После окончания игры можно перейти в WAITING,
+                    // но это уже обрабатывается на сервере
                     
                 default:
                     break
@@ -46,8 +54,17 @@ final class LobbyInteractor: LobbyInteractionLogic {
     }
     
     func sendReady() {
+        // Проверяем текущий статус игры
+        if currentGameState == "IN_PROGRESS" {
+            // Если игра уже началась, сразу переходим на игровое поле
+            print("Игра уже началась. Переход на GameZone...")
+            DispatchQueue.main.async { [weak self] in
+                self?.presenter.routeToGameZone()
+            }
+            return
+        }
+        
+        // Если игра еще не началась, отправляем готовность
         service.sendReady()
-        // Для теста: сразу переходим на GameZone
-        presenter.routeToGameZone()
     }
 }
